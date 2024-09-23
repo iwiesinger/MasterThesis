@@ -13,6 +13,7 @@ if os.path.exists(file_path) and os.access(file_path, os.R_OK):
         # Open and load data
         with open(file_path, 'r') as file:
             raw_data = json.load(file)
+            print(f'Type of data: {type(raw_data)}')
             print(f"Data is readable")
     except Exception as e:
         print(f"An error occurred while reading the file: {e}")
@@ -26,6 +27,10 @@ print(f"The raw data has {list_length} items.")
 # Types of elements
 element_types = set(type(item) for item in raw_data)
 print(f"The list contains items of types: {element_types}")
+
+#Explore raw data
+print(f'Type of data: {type(raw_data)}')
+print(f'First entry: {raw_data[0]}')
 
 # convert into dataframe
 import pandas as pd
