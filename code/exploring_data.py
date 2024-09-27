@@ -142,6 +142,7 @@ print("Unique values for category 'name':", unique_names)
 #endregion
 
 #region coco
+import json
 with open('instances_train2017.json', 'r') as file: 
     annotations_train_coco = json.load(file)
 
@@ -199,6 +200,10 @@ for i, category in enumerate(categories_coco):
         print(f"id: {category['id']}")
     else:
         print(f"'id' not found in category {i}")
+
+print(categories_coco[54:58]) #id 56 is an Unclear Sign
+
+
 # coco-recognition training annotations is a dictionary which has the keys "images", "annotations" and "categories"
 #   images is a list of length 554 with (100 for validation) with list values that are dictionaries 
 #       (keys: "id", "file_name", "height", "width")
@@ -249,4 +254,126 @@ print(f"Unique values for 'filename': {len(unique_filenames)} unique values")
 #endregion
 
 
+######### Database entries #########
 
+#region MongoDB Setup
+import pymongo
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+from gridfs import GridFSBucket
+mongo_uri = "mongodb://wiesinger:xtz4bbBHnyDKeYT4uqEW@badwcai-ebl01.srv.mwn.de:27017,badwcai-ebl02.srv.mwn.de:27018,badwcai-ebl03.srv.mwn.de:27019/ebl?replicaSet=rs-ebl&authSource=ebl&authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true"
+
+try:
+    # Create a MongoDB client
+    client = MongoClient(mongo_uri)
+
+    # The ping command is used to check if the connection to MongoDB is successful
+    client.admin.command('ping')
+    print("Connection to MongoDB successful!")
+
+except ConnectionFailure as e:
+    print(f"Connection failed: {e}")
+
+db = client['ebl']
+
+######################YEEEEEEES; THAT WORKED!!!!!!!!!!! ############################
+#endregion
+
+#region Retrieve Images
+
+# Connect to the specific database
+
+# Access the GridFS bucket for 'photos'
+grid_fs_bucket = GridFSBucket(db, bucket_name="photos")
+
+file_names_without_extension = id_list  
+
+# Loop through each filename, add ".jpg", and download the corresponding file
+for file_name in file_names_without_extension:
+    full_file_name = f"{file_name}.jpg"  # Add the ".jpg" extension
+    
+    try:
+        # Open a stream to the file in GridFS by name
+        with grid_fs_bucket.open_download_stream_by_name(full_file_name) as grid_out:
+            # Read the file's binary content
+            file_data = grid_out.read()
+            
+            # Save the file locally with the same name
+            with open(full_file_name, 'wb') as output_file:
+                output_file.write(file_data)
+                
+        print(f"Downloaded {full_file_name}")
+    
+    except Exception as e:
+        print(f"Error downloading {full_file_name}: {e}")
+
+#endregion
+
+#region Getting IDs to match to category names
+signs_collection = db['signs']
+
+signs_dict = {}
+
+for sign in signs_collection.find():
+    sign_id = sign.get('_id')
+    lists = sign.get('lists', [])
+
+    found_match = False
+
+    for entry in lists:
+        name = entry.get('name')
+        number = entry.get('number')
+    
+        if name and 'ABZ' in name and isinstance(number, (int, str)):
+            signs_dict[sign_id] = f"{name}{number}"
+            print(f'Match found! Added {sign_id}: {name}{number} to sign_dict.')
+            found_match = True
+            break
+
+    if not found_match:
+        print(f'No match found for sign {sign_id}')
+
+print(signs_dict)
+print(len(signs_dict)) #827 signs
+#endregion
+
+#region Using this to convert COCO categories into ABZ codes
+import pandas as pd
+categories_coco = annotations_train_coco['categories']
+coco_categories_df = pd.DataFrame(categories_coco)
+
+def get_encoded_name(name):
+    return signs_dict.get(name, "Unknown") 
+
+coco_categories_df['encoded_name'] = coco_categories_df['name'].apply(get_encoded_name)
+print(coco_categories_df)
+unknown_entries = coco_categories_df[coco_categories_df['encoded_name']== 'Unknown']
+print(unknown_entries) 
+#endregion
+
+#region Checking if all COCO categories come up in Language Model Dataset
+# COCO categories stored in coco_categories_df['encoded_name]
+# compare to unique_token_counts[unique_tok_counts{train_nx}]
+uni_tok_train_nx = unique_token_counts['unique_tok_counts_train_nx']
+print(uni_tok_train_nx)
+
+matches = coco_categories_df['encoded_name'].isin(uni_tok_train_nx['token'])
+print(matches)
+if matches.all():
+    print("All entries from 'encoded name' are present in 'unique_tok_count_train_nx'.")
+else:
+    missing_entries = coco_categories_df[~matches]
+    print("The following 'encoded_name' entries are missing in 'unique_tok_counts_train_nx':")
+    print(missing_entries)
+#      id           name encoded_name
+#49    49          |I.A|      ABZ142a
+#56    56    UnclearSign      Unknown
+#86    86        |U.GUD|       ABZ441
+#93    93      |IGI.DIB|       ABZ455
+#96    96          |U.U|       ABZ471
+#103  103         |U.KA|       ABZ412
+#108  108        |U.U.U|       ABZ472
+
+# All of them are there in the dataset, just as an unsure sign -> if we increase the dataset, it would appear and be recognized.
+
+#endregion
