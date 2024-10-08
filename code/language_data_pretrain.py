@@ -85,14 +85,11 @@ print(df_raw['_id'].head(5))
 id_unique = df_raw['_id'].unique()
 print(len(id_unique))
 # ID is a unique identifier of each observation
+id_list = list(id_unique)
 #endregion
 #endregion
 
 #region Tokenizing the data and removing duplicates
-def tokenize_signs(signs):
-    signs = signs.replace('\n', ' <NEWLINE> ') # Replace Newline with special Token
-    tokens = ['<BOS>'] + signs.split() + ['<EOS>'] # BOS, EOS and separation by whitespace
-    return tokens
 
 # Filter out X and Newline
 def tokenize_signs_exc_x(signs):
@@ -101,12 +98,6 @@ def tokenize_signs_exc_x(signs):
     tokens = ['<BOS>'] + [token for token in tokens if token not in ['X', '<NEWLINE>']] + ['<EOS>']  # Filter out 'X' and '<NEWLINE>'
     return tokens
 
-df_raw_x = df_raw.copy()
-df_raw_x['tok_signs'] = df_raw_x['signs'].apply(tokenize_signs)
-df_raw_x = df_raw_x.drop_duplicates(subset=['tok_signs'])
-print(df_raw_x.head())
-print(len(df_raw)) # 22054
-print(len(df_raw_x)) # 22025 -> 29 rows removed
 
 df_raw_nx = df_raw.copy()
 df_raw_nx['tok_signs'] = df_raw_nx['signs'].apply(tokenize_signs_exc_x)
@@ -114,40 +105,65 @@ df_raw_nx = df_raw_nx.drop_duplicates(subset=['tok_signs'])
 print(df_raw_nx.head())
 print(len(df_raw)) # 22054
 print(len(df_raw_nx)) # 22004 -> 50 rows removed.
+print(type(df_raw))
+print(df_raw_nx.columns)
 #endregion
 
 #region Removing uninformative rows
 # sets of uninformative tokens
-uninformative_tokens_x = {'<BOS>', '<NEWLINE>', 'X', '<EOS>'}
 uninformative_tokens_nx = {'<BOS>', '<NEWLINE>', '<EOS>'}
 
 # Function to check if a row contains only uninformative tokens
-def is_informative_x(tokens):
-    return not all(token in uninformative_tokens_x for token in tokens)
-
 def is_informative_nx(tokens):
     return not all(token in uninformative_tokens_nx for token in tokens)
 
 # Filter rows
-df_raw_x = df_raw_x[df_raw_x['tok_signs'].apply(is_informative_x)]
 df_raw_nx = df_raw_nx[df_raw_nx['tok_signs'].apply(is_informative_nx)]
-print(df_raw_x.head())
-print(len(df_raw_x)) # 22007 -> 18 rows were uninformative with X
 print(len(df_raw_nx)) #21994 -> 10 rows completely uninformative without X
 
 
 # Reset the index if needed
-df_raw_x.reset_index(drop=True, inplace=True)
 df_raw_nx.reset_index(drop=True, inplace=True)
+#endregion
+
+#region How long are resulting rows?
+
+#region Statistics
+# Calculate basic statistics for the token counts
+df_raw_nx['token_count'] = df_raw_nx['tok_signs'].apply(len)
+
+# Get basic statistics like mean, median, percentiles, etc.
+token_count_stats = df_raw_nx['token_count'].describe()
+
+# Display the statistics
+print(token_count_stats)
+#endregion
+
+#region Visualization
+import matplotlib.pyplot as plt
+
+# Calculate token counts
+df_raw_nx['token_count'] = df_raw_nx['tok_signs'].apply(len)
+
+# Get the frequency distribution of token counts
+token_count_distribution = df_raw_nx['token_count'].value_counts().sort_index()
+
+# Plot a bar chart
+plt.figure(figsize=(10, 6))
+token_count_distribution.plot(kind='bar')
+plt.title('Distribution of Token Counts')
+plt.xlabel('Number of Tokens')
+plt.ylabel('Frequency (Number of Rows)')
+plt.show()
+
+# Max round about 400 tokens per observation
+#endregion
+
 #endregion
 
 #region Implement train- and test split: 0.7 training data, 0.15 validation data, 0.15 test data
 random_seed = 42
-df_shuffled_x = df_raw_x.sample(frac=1, random_state=random_seed).reset_index(drop=True)
 df_shuffled_nx = df_raw_nx.sample(frac=1, random_state = random_seed).reset_index(drop=True)
-
-# Display the shuffled DataFrame
-print(df_shuffled_x.head())
 print(df_shuffled_nx.head())
 
 def train_val_test_split(df):
@@ -158,12 +174,8 @@ def train_val_test_split(df):
     df_test= df[val_split:]
     return df_train, df_val, df_test
 
-df_train_x, df_val_x, df_test_x = train_val_test_split(df_shuffled_x)
 df_train_nx, df_val_nx, df_test_nx = train_val_test_split(df_shuffled_nx)
 
-print("df_train_x shape:", df_train_x.shape) # 15404 x 4
-print("df_val_x shape:", df_val_x.shape) # 3301 x 4
-print("df_test_x shape:", df_test_x.shape) # 3302 x 4
 print("df_train_nx shape:", df_train_nx.shape) # 15395 x 4
 print("df_val_nx shape:", df_val_nx.shape) # 3299 x 4
 print("df_test_nx shape:", df_test_nx.shape) # 3300 x 4
@@ -178,11 +190,8 @@ print(df_test_nx.head())
 #region all tokens lists
 # Dataframes in dictionary
 dataframes = {
-    'train_x': df_train_x,
     'train_nx': df_train_nx,
-    'val_x': df_val_x,
     'val_nx': df_val_nx,
-    'test_x': df_test_x,
     'test_nx': df_test_nx
 }
 def aggregate_tokens(dataframe):
@@ -202,11 +211,8 @@ for name, tokens in all_tokens.items():
 
 for name, token in all_tokens.items():
     print(f'Length of the tokens in: {name}: {len(token)}')
-    # Length of the tokens in: all_tokens_train_x: 2006457
     # Length of the tokens in: all_tokens_train_nx: 1824260
-    # Length of the tokens in: all_tokens_val_x: 436820
     # Length of the tokens in: all_tokens_val_nx: 391434
-    # Length of the tokens in: all_tokens_test_x: 417331
     # Length of the tokens in: all_tokens_test_nx: 403357
 #endregion
 
@@ -225,33 +231,24 @@ for name, tokens in all_tokens.items():
 # Display the unique token count dataframes to verify
 for name, un_tok in unique_token_counts.items():
     print(f"\nUnique token counts for {name}:{len(un_tok['count'])}" )
-# Unique token counts for unique_tok_counts_train_x:4938
 # Unique token counts for unique_tok_counts_train_nx:4926
-# Unique token counts for unique_tok_counts_val_x:1864
 # Unique token counts for unique_tok_counts_val_nx:1831
-# Unique token counts for unique_tok_counts_test_x:1860
 # Unique token counts for unique_tok_counts_test_nx:1857
 #endregion
 
 #region How many of the unique tokens appear once?
 for name, un_tok in unique_token_counts.items():
     print(f"\nNumber of tokens only appearing once for {name}: {len(un_tok[un_tok['count'] == 1])}")
-# Number of tokens only appearing once for unique_tok_counts_train_x: 3037
 # Number of tokens only appearing once for unique_tok_counts_train_nx: 2988
-# Number of tokens only appearing once for unique_tok_counts_val_x: 1066
 # Number of tokens only appearing once for unique_tok_counts_val_nx: 1049
-# Number of tokens only appearing once for unique_tok_counts_test_x: 1090
 # Number of tokens only appearing once for unique_tok_counts_test_nx: 1086
 #endregion
 
 #region How many of the unique tokens appear less or equal than three times?
 for name, un_tok in unique_token_counts.items():
 print(f"\nNumber of tokens appearing less or equal than three times for {name}: {len(un_tok[un_tok['count'] <= 3])}")
-# Number of tokens appearing less or equal than three times for unique_tok_counts_train_x: 3864
 # Number of tokens appearing less or equal than three times for unique_tok_counts_train_nx: 3864
-# Number of tokens appearing less or equal than three times for unique_tok_counts_val_x: 1331
 # Number of tokens appearing less or equal than three times for unique_tok_counts_val_nx: 1331
-# Number of tokens appearing less or equal than three times for unique_tok_counts_test_x: 1326
 # Number of tokens appearing less or equal than three times for unique_tok_counts_test_nx: 1326
 #endregion
 
@@ -474,7 +471,7 @@ plt.show()
 
 #region Plot unique tokens sorted by count: meq 5
 # List of DataFrames to be plotted: X included here!
-dfs_to_plot = ['unique_tok_counts_train_x', 'unique_tok_counts_val_x', 'unique_tok_counts_test_x']
+dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
 
 # Filter and sort the DataFrames for the bar chart: only those who appear at least 5 times
 filtered_sorted_counts_meq5 = {name: df[df['count'] >= 5] for name, df in sorted_unique_token_counts.items() if
@@ -508,7 +505,7 @@ plt.show()
 
 #region Plot count frequencies: How often do counts occur?
 # List of DataFrames to be plotted: X included here!
-dfs_to_plot = ['unique_tok_counts_train_x', 'unique_tok_counts_val_x', 'unique_tok_counts_test_x']
+dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
 
 # Create the plot with three rows
 fig, axes = plt.subplots(3, 1, figsize=(15, 15))
@@ -680,20 +677,20 @@ for i, name in enumerate(datasets_to_plot):
     # Plot letter counts
     ax_letters = axes[i, 0]
     letter_counts.plot(kind='bar', ax=ax_letters, color='blue')
-    ax_letters.set_title(f'Letter Counts in {name}', fontsize=18)  # Increased font size for title
-    ax_letters.set_xlabel('Letter Count', fontsize=16)  # Increased font size for x-axis label
-    ax_letters.set_ylabel('Frequency', fontsize=16)  # Increased font size for y-axis label
+    ax_letters.set_title(f'Letter Counts in {name}', fontsize=18)  
+    ax_letters.set_xlabel('Letter Count', fontsize=16)  
+    ax_letters.set_ylabel('Frequency', fontsize=16)  
     ax_letters.ticklabel_format(style='plain', axis='y')
-    ax_letters.tick_params(axis='both', which='major', labelsize=14)  # Increased font size for tick labels
+    ax_letters.tick_params(axis='both', which='major', labelsize=14) 
 
     # Plot digit counts
     ax_digits = axes[i, 1]
     digit_counts.plot(kind='bar', ax=ax_digits, color='green')
-    ax_digits.set_title(f'Digit Counts in {name}', fontsize=18)  # Increased font size for title
-    ax_digits.set_xlabel('Digit Count', fontsize=16)  # Increased font size for x-axis label
-    ax_digits.set_ylabel('Frequency', fontsize=16)  # Increased font size for y-axis label
+    ax_digits.set_title(f'Digit Counts in {name}', fontsize=18)  
+    ax_digits.set_xlabel('Digit Count', fontsize=16) 
+    ax_digits.set_ylabel('Frequency', fontsize=16)  
     ax_digits.ticklabel_format(style='plain', axis='y')
-    ax_digits.tick_params(axis='both', which='major', labelsize=14)  # Increased font size for tick labels
+    ax_digits.tick_params(axis='both', which='major', labelsize=14) 
 
 # Adjust layout and show the plot
 plt.tight_layout()
@@ -714,7 +711,7 @@ filtered_data = unique_codes[~unique_codes['token'].isin(exclude_tokens)]
 top_20 = filtered_data.head(20)
 
 # Creating the figure and a subplot
-fig, ax = plt.subplots(figsize=(3.5,4))  # Adjust the size as needed
+fig, ax = plt.subplots(figsize=(3.5,4))  
 ax.axis('tight')
 ax.axis('off')
 table = ax.table(cellText=top_20.values, colLabels=top_20.columns, loc='center')
@@ -761,28 +758,8 @@ plt.show()
 
 
 ######### Further Analysis Preparations #########
-#region Create Vocabulary and inversed vocabulary with X
-from collections import Counter
 
-# Flatten the list of tokenized signs to create a vocabulary
-all_tokens_x = [token for sublist in df_raw_x['tok_signs'] for token in sublist]
-print(all_tokens_x[9])
-
-# Count the frequency of each token
-token_counts_x = Counter(all_tokens_x)
-
-# Create a vocabulary with token to index mapping
-# Reserve indices 0-1 for special tokens
-vocab_x = {token: idx for idx, (token, _) in enumerate(token_counts_x.items(), start=2)}
-vocab_x['<PAD>'] = 0
-vocab_x['<UNK>'] = 1
-
-
-# Invert the vocabulary dictionary for decoding (if needed)
-inv_vocab_x = {idx: token for token, idx in vocab_x.items()}
-#endregion
-
-#region Create Vocabulary and inversed vocabulary without X
+#region Create Vocabulary and inversed vocabulary without X and NEWLINE
 from collections import Counter
 
 # Flatten the list of tokenized signs to create a vocabulary
@@ -813,12 +790,7 @@ def tokens_to_ids(tokens, vocab, max_len=512):
     attention_mask = attention_mask + [0] * padding_length
     return token_ids, attention_mask
 
-# Apply the function to each tokenized sequence in the dataframes with X
-df_train_x['input_ids'], df_train_x['attention_mask'] = zip(*df_train_x['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_x)))
-df_val_x['input_ids'], df_val_x['attention_mask'] = zip(*df_val_x['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_x)))
-df_test_x['input_ids'], df_test_x['attention_mask'] = zip(*df_test_x['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_x)))
-
-# Without X
+# Apply the function to each tokenized sequence in dataframes without X or NEWLINE
 df_train_nx['input_ids'], df_train_nx['attention_mask'] = zip(*df_train_nx['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_nx)))
 df_val_nx['input_ids'], df_val_nx['attention_mask'] = zip(*df_val_nx['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_nx)))
 df_test_nx['input_ids'], df_test_nx['attention_mask'] = zip(*df_test_nx['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_nx)))
@@ -842,20 +814,11 @@ class TransliterationDataset(Dataset):
             'attention_mask': self.attention_mask[idx],
             'labels': self.input_ids[idx]  # Using input_ids as labels for MLM
         }
-# Create the datasets with X
-train_dataset_x = TransliterationDataset(df_train_x)
-val_dataset_x = TransliterationDataset(df_val_x)
-test_dataset_x = TransliterationDataset(df_test_x)
 
 # Create datasets without X
 train_dataset_nx = TransliterationDataset(df_train_nx)
 val_dataset_nx = TransliterationDataset(df_val_nx)
 test_dataset_nx = TransliterationDataset(df_test_nx)
-
-# Create the dataloaders with X
-train_loader_x = DataLoader(train_dataset_x, batch_size=24, shuffle=True)
-val_loader_x = DataLoader(val_dataset_x, batch_size=24, shuffle=True)
-test_loader_x = DataLoader(test_dataset_x, batch_size=24)
 
 # Create the dataloaders without X
 train_loader_nx = DataLoader(train_dataset_nx, batch_size=24, shuffle=True)
