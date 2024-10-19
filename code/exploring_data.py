@@ -50,6 +50,8 @@ unique_periods = df_raw['period'].unique()
 unique_periods_list = unique_periods.tolist()
 print(unique_periods_list)
 print(len(unique_periods_list))
+
+
 #endregion
 
 #region Period Counts
@@ -84,6 +86,7 @@ print(len(sortKey))
 print(df_raw['_id'].head(5))
 id_unique = df_raw['_id'].unique()
 print(len(id_unique))
+id_list = list(id_unique)
 # ID is a unique identifier of each observation
 #endregion
 #endregion
@@ -281,31 +284,65 @@ db = client['ebl']
 
 #region Retrieve Images
 
+#region Checking capacity
+import shutil
+total, used, free = shutil.disk_usage("/")
+
+print(f"Total: {total / (1024**3):.2f} GB")
+print(f"Used: {used / (1024**3):.2f} GB")
+print(f"Free: {free / (1024**3):.2f} GB")
+#endregion
+
 # Connect to the specific database
 
 # Access the GridFS bucket for 'photos'
 grid_fs_bucket = GridFSBucket(db, bucket_name="photos")
 
 file_names_without_extension = id_list  
+output_folder = 'language_model_photos'
 
 # Loop through each filename, add ".jpg", and download the corresponding file
-for file_name in file_names_without_extension:
+""" for file_name in file_names_without_extension:
     full_file_name = f"{file_name}.jpg"  # Add the ".jpg" extension
-    
+    output_file_path = os.path.join(output_folder, full_file_name)
+
     try:
         # Open a stream to the file in GridFS by name
         with grid_fs_bucket.open_download_stream_by_name(full_file_name) as grid_out:
             # Read the file's binary content
             file_data = grid_out.read()
             
-            # Save the file locally with the same name
-            with open(full_file_name, 'wb') as output_file:
+            # Save file into folder
+            with open(output_file_path, 'wb') as output_file:
                 output_file.write(file_data)
                 
-        print(f"Downloaded {full_file_name}")
+        print(f"Downloaded {full_file_name} to {output_file_path}")
     
     except Exception as e:
         print(f"Error downloading {full_file_name}: {e}")
+ """
+
+import os
+from PIL import Image
+
+folder_path = 'language_model_photos'
+print(len(os.listdir(folder_path)))
+### 19354 images downloaded ###
+#endregion
+
+#region Explore Image characteristics
+
+# Get a list of all jpg files in the folder
+jpg_files = [file for file in os.listdir(folder_path) if file.endswith('.jpg')]
+
+# Iterate through each image and print its size (width and height in pixels)
+for file_name in jpg_files:
+    # Open the image file
+    with Image.open(os.path.join(folder_path, file_name)) as img:
+        # Get the size (width, height) of the image
+        width, height = img.size
+        print(f'Image: {file_name} | Width: {width} px | Height: {height} px')
+# Images are not normalized
 
 #endregion
 
