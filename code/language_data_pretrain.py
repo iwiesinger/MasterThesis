@@ -140,23 +140,108 @@ print(token_count_stats)
 #endregion
 
 #region Visualization
+
+#region Big Picture
+import pandas as pd
 import matplotlib.pyplot as plt
 
-# Calculate token counts
+# Create the token count column
 df_raw_nx['token_count'] = df_raw_nx['tok_signs'].apply(len)
 
-# Get the frequency distribution of token counts
-token_count_distribution = df_raw_nx['token_count'].value_counts().sort_index()
+# Define the bins (ranges) for token counts, including the last bucket for >3500
+bins = [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, float('inf')]
 
-# Plot a bar chart
-plt.figure(figsize=(10, 6))
-token_count_distribution.plot(kind='bar')
-plt.title('Distribution of Token Counts')
-plt.xlabel('Number of Tokens')
-plt.ylabel('Frequency (Number of Rows)')
+# Define the labels for each bucket, with the last being ">3500"
+labels = ['0-500', '500-1000', '1000-1500', '1500-2000', '2000-2500', '2500-3000', '3000-3500', '>3500']
+
+# Create the bucketed token counts with labels
+df_raw_nx['token_count_bucket'] = pd.cut(df_raw_nx['token_count'], bins=bins, labels=labels, right=False)
+
+# Get the frequency distribution of the buckets
+bucket_distribution = df_raw_nx['token_count_bucket'].value_counts().sort_index()
+
+# Plot the bar chart
+plt.figure(figsize=(10,8))
+ax = bucket_distribution.plot(kind='bar')
+
+# Add counts on top of each bar
+for p in ax.patches:
+    ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
+                ha='center', va='center', xytext=(0, 10), textcoords='offset points')
+
+# Add labels and title
+plt.title('Token Count Ranges')
+plt.xlabel('Token Count Ranges')
+plt.ylabel('Frequency (Number of Rows) within the range')
+plt.xticks(rotation=45)
 plt.show()
+plt.savefig('plots/tok_count_ranges_total.jpg')
 
-# Max round about 400 tokens per observation
+# Most Observations have less than 500 tokens. 
+#endregion
+
+#region Less than 500 Zoom-In
+
+# Define the bins (ranges) for token counts between 0 and 500, in steps of 50
+bins_0_500 = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
+
+# Define the labels for each bucket
+labels_0_500 = ['<50', '50-100', '100-150', '150-200', '200-250', '250-300', '300-350', '350-400', '400-450', '450-500']
+
+# Create the bucketed token counts with labels for the range 0-500
+df_raw_nx['token_count_bucket_0_500'] = pd.cut(df_raw_nx['token_count'], bins=bins_0_500, labels=labels_0_500, right=False)
+
+# Get the frequency distribution of the buckets for the range 0-500
+bucket_distribution_0_500 = df_raw_nx['token_count_bucket_0_500'].value_counts().sort_index()
+
+# Plot the bar chart
+plt.figure(figsize=(10,8))
+ax = bucket_distribution_0_500.plot(kind='bar')
+
+# Add counts on top of each bar
+for p in ax.patches:
+    ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
+                ha='center', va='center', xytext=(0, 10), textcoords='offset points')
+
+# Add labels and title
+plt.title('Distribution of Token Count Buckets (0-500)')
+plt.xlabel('Token Count Range')
+plt.ylabel('Frequency (Number of Rows)')
+plt.xticks(rotation=45)
+plt.show()
+plt.savefig('plots/less500_tok_count_ranges.jpg')
+#endregion
+
+#region Less than 50 Zoom-In
+# Define the bins (ranges) for token counts less than 50, in steps of 10
+bins_under_50 = [0, 10, 20, 30, 40, 50]
+
+# Define the labels for each bucket under 50
+labels_under_50 = ['<10', '10-20', '20-30', '30-40', '40-50']
+
+# Create the bucketed token counts with labels for the range <50
+df_raw_nx['token_count_bucket_under_50'] = pd.cut(df_raw_nx['token_count'], bins=bins_under_50, labels=labels_under_50, right=False)
+
+# Get the frequency distribution of the buckets for the range <50
+bucket_distribution_under_50 = df_raw_nx['token_count_bucket_under_50'].value_counts().sort_index()
+
+# Plot the bar chart for the range <50
+plt.figure(figsize=(10,8))
+ax = bucket_distribution_under_50.plot(kind='bar')
+
+# Add counts on top of each bar
+for p in ax.patches:
+    ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
+                ha='center', va='center', xytext=(0, 10), textcoords='offset points')
+
+# Add labels and title
+plt.title('Distribution of Token Count Buckets (<50)')
+plt.xlabel('Token Count Range')
+plt.ylabel('Frequency (Number of Rows)')
+plt.xticks(rotation=45)
+plt.show()
+#endregion
+
 #endregion
 
 #endregion
@@ -781,7 +866,7 @@ inv_vocab_nx = {idx: token for token, idx in vocab_nx.items()}
 #endregion
 
 #region Convert tokenized data to input IDs and attention masks
-def tokens_to_ids(tokens, vocab, max_len=512):
+def tokens_to_ids(tokens, vocab, max_len=520):
     token_ids = [vocab.get(token, vocab['<UNK>']) for token in tokens]
     token_ids = token_ids[:max_len]  # Truncate to max_len
     attention_mask = [1] * len(token_ids)
@@ -790,10 +875,20 @@ def tokens_to_ids(tokens, vocab, max_len=512):
     attention_mask = attention_mask + [0] * padding_length
     return token_ids, attention_mask
 
+print(df_train_nx['attention_mask'][15])
+
 # Apply the function to each tokenized sequence in dataframes without X or NEWLINE
 df_train_nx['input_ids'], df_train_nx['attention_mask'] = zip(*df_train_nx['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_nx)))
 df_val_nx['input_ids'], df_val_nx['attention_mask'] = zip(*df_val_nx['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_nx)))
 df_test_nx['input_ids'], df_test_nx['attention_mask'] = zip(*df_test_nx['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab_nx)))
+
+print(df_train_nx.head())
+print(df_train_nx.columns)
+print(df_train_nx['input_ids'].head())
+print(df_train_nx['tok_signs'][4])
+print(len(df_train_nx['input_ids'][1]))
+print(len(df_train_nx['input_ids'][2]))
+print(len(df_train_nx['input_ids'][20]))
 
 
 #endregion
