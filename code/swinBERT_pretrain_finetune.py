@@ -75,7 +75,7 @@ print(empty_tok_signs)
 # none left :-) so all is tokenized nicely!
 
 # Reset index 
-df_tok.reset_index(drop=True, inplace=True)
+df_raw_nx.reset_index(drop=True, inplace=True)
 #endregion
 
 #region Implement train- and test split: 0.7 training data, 0.15 validation data, 0.15 test data
@@ -127,12 +127,12 @@ def tokens_to_ids(tokens, vocab, max_len=512):
     attention_mask = attention_mask + [0] * padding_length
     return token_ids, attention_mask
 
+print(df_train_nx['attention_mask'][15])
+
 # Apply the function to each tokenized sequence in dataframes without X or NEWLINE
 df_train['input_ids'], df_train['attention_mask'] = zip(*df_train['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 df_test['input_ids'], df_test['attention_mask'] = zip(*df_test['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 
-print(len(df_train['input_ids'][2]))
-print(len(df_train['attention_mask'][3]))
 #endregion
 
 #region Create PyTorch Datasets and DataLoaders
@@ -157,8 +157,8 @@ train_dataset = TransliterationDataset(df_train)
 test_dataset = TransliterationDataset(df_test)
 
 # Create the dataloaders without X
-train_loader = DataLoader(train_dataset, batch_size=24, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=24)
+train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=20)
 #endregion
 
 #region Perplexity Callback
@@ -177,7 +177,7 @@ class PerplexityCallback(TrainerCallback):
 
 ######### LM Training: BertLMHead #########
 
-#region OLD BertLMHead continuing model training
+#region BertLMHead continuing model training
 #### BERTLMHEAD
 
 import wandb
@@ -249,7 +249,7 @@ test_perplexity_nx = math.exp(test_result_nx['eval_loss'])
 print("Test Perplexity: ", test_perplexity_nx)
 #endregion
 
-#region NEW BertLMHead Pretraining with only train_test
+#region NEW BertLMHead
 import wandb
 from transformers import BertLMHeadModel, Trainer, TrainingArguments, BertConfig
 from transformers.integrations import WandbCallback
@@ -258,19 +258,11 @@ import os
 
 torch.cuda.memory_summary(device=None, abbreviated=False)
 torch.cuda.empty_cache()
+torch.cuda.is_available()
 
-print(torch.cuda.is_available())  # Should return True if a GPU is available
-print(torch.cuda.device_count())  # Returns the number of GPUs available
-print(torch.cuda.current_device())  # Returns the index of the current GPU being used
-print(torch.cuda.get_device_name(0))  # Returns the name of the first GPU
-
-import torch
-print(torch.cuda.is_available())
-
-# Check if CUDA is available
+# Check if GPU is available and set the device accordingly
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")  
-
+print(f"Using device: {device}")
 
 # Initialize Weights and Biases for a new training run in the master_thesis project
 wandb.init(project="master_thesis", name="pretraining_train_test_run")
@@ -287,26 +279,29 @@ output_dir = 'MasterThesis/model_results_pretraining_train_test'
 training_args = TrainingArguments(
     output_dir=output_dir,             
     num_train_epochs=12,               
-    per_device_train_batch_size=24,    
-    per_device_eval_batch_size=24,
-    warmup_steps=300,
+    per_device_train_batch_size=20,    
+    per_device_eval_batch_size=20,
+    warmup_steps=400,
     weight_decay=0.01,
     logging_dir='./logs',
-    logging_steps=10,
+    logging_steps=100,
     eval_strategy="no",          
     save_strategy="epoch",            
     report_to="wandb",                 
-    load_best_model_at_end=False      
+    load_best_model_at_end=False,
+    fp16=True      
 )
 
-# Initialize the Trainer using train and test datasets 
+# Initialize the Trainer using train and test datasets (without validation dataset)
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=train_dataset,       # Your 85% train split dataset
-    eval_dataset=test_dataset,         # Your 15% test split dataset (test data used for final evaluation)
-    callbacks=[WandbCallback()]        # Log with Weights and Biases
+    train_dataset=train_dataset,       
+    eval_dataset=test_dataset,         
+    callbacks=[WandbCallback()]        
 )
+
+torch.cuda.empty_cache()
 
 # Train the model
 trainer.train()
