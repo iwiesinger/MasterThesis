@@ -2,10 +2,11 @@
 #region Import packages
 import os
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import pandas as pd
 import numpy as np
+from safetensors.torch import load_file
 #endregion
 
 labels_path = '/home/ubuntu/MasterThesis/'
@@ -15,7 +16,7 @@ output_dif = '/home/ubuntu/MasterThesis/'
 #region Defining Custom class for handling both image and text data
 
 class TransliterationWithImageDataset(Dataset):
-    def __init__(self, df, root_dir, feature_extractor, max_seq_len=520):
+    def __init__(self, df, root_dir, feature_extractor, max_seq_len=512):
         self.df = df
         self.root_dir = root_dir  # images directory
         self.feature_extractor = feature_extractor # SWIN
@@ -34,7 +35,7 @@ class TransliterationWithImageDataset(Dataset):
         attention_mask = self.attention_mask[idx]
 
         # Image data
-        file_name = self.df['_id'][idx] + ".jpg"  # as _id maps to image file name
+        file_name = self.df['_id'][idx] + ".jpg"  # _id maps to image file name
         image_path = self.root_dir + file_name
         image = Image.open(image_path).convert("RGB")
 
@@ -51,27 +52,28 @@ class TransliterationWithImageDataset(Dataset):
 #endregion
 
 #region Creating custom class datasets
-root_dir = 'language_model_photos/'
+root_dir = '/home/ubuntu/MasterThesis/language_model_photos/'
 
-# Load the SWIN feature extractor
+# Load SWIN feature extractor
 from transformers import AutoFeatureExtractor
 feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224")
 
 # Create datasets
-train_dataset_with_images = TransliterationWithImageDataset(df_train_nx, root_dir, feature_extractor)
-val_dataset_with_images = TransliterationWithImageDataset(df_val_nx, root_dir, feature_extractor)
-test_dataset_with_images = TransliterationWithImageDataset(df_test_nx, root_dir, feature_extractor)
+train_dataset_with_images = TransliterationWithImageDataset(df_train, root_dir, feature_extractor)
+test_dataset_with_images = TransliterationWithImageDataset(df_test, root_dir, feature_extractor)
 
 # Create data loaders
-train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=24, shuffle=True)
-val_loader_with_images = DataLoader(val_dataset_with_images, batch_size=24, shuffle=True)
-test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=24)
+train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=20, shuffle=True)
+test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=20)
 #endregion
 
 #region loading in the pretrained BERT weights
 from transformers import BertModel, VisionEncoderDecoderModel, SwinModel, SwinConfig, BertConfig, VisionEncoderDecoderConfig
 
-pretrained_bert_path = 'results_2noNEWLINE/checkpoint-2564/'
+pretrained_bert_path = '/home/ubuntu/MasterThesis/model_results_pretraining_train_test/checkpoint-11196/'
+
+import os
+os.getcwd()
 
 # BERT configuration and model
 bert_config = BertConfig.from_pretrained(pretrained_bert_path)
@@ -90,22 +92,28 @@ model.decoder = bert_model
 #endregion
 
 #region Vocabulary Matching
-from transformers import PreTrainedTokenizerFast
+#from transformers import PreTrainedTokenizerFast
 
 # Special Token IDs
-model.config.pad_token_id = vocab_nx['<PAD>']
-model.config.decoder_start_token_id = vocab_nx['<BOS>']  
-model.config.eos_token_id = vocab_nx['<EOS>'] 
-model.config.unk_token_id = vocab_nx['<UNK>'] 
+model.config.pad_token_id = vocab['<PAD>']
+model.config.decoder_start_token_id = vocab['<BOS>']  
+model.config.eos_token_id = vocab['<EOS>'] 
+model.config.unk_token_id = vocab['<UNK>'] 
 
 # vocabulary size
-model.config.vocab_size = len(vocab_nx)  # Number of unique tokens
-model.decoder.resize_token_embeddings(len(vocab_nx))
+model.config.vocab_size = len(vocab)  # Number of unique tokens
+model.decoder.resize_token_embeddings(len(vocab))
 
 print(f"Model config:\nPad token ID: {model.config.pad_token_id}\nBOS token ID: {model.config.decoder_start_token_id}\nEOS token ID: {model.config.eos_token_id}\nVocab size: {model.config.vocab_size}")
 #endregion
 
-model.decoder.load_state_dict(torch.load(pretrained_bert_path + "model.safetensors"))
+#model.decoder.load_state_dict(torch.load(pretrained_bert_path + "model.safetensors"))
+# Load the pretrained BERT weights from the safetensors file
+
+pretrained_weights = load_file(pretrained_bert_path + "model.safetensors")
+for key in pretrained_weights.keys():
+    print(key)
+model.decoder.load_state_dict(pretrained_weights)
 
 #region Training setup
 
@@ -207,7 +215,4 @@ config_decoder = BertConfig()
 # Group architectures and define model
 config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(config_encoder, config_decoder)
 model = VisionEncoderDecoderModel(config=config)
-
-
-
 
