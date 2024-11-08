@@ -90,6 +90,7 @@ def train_val_test_split(df):
     return df_train, df_test
 
 df_train, df_test = train_val_test_split(df_shuffled)
+print(df_train.head())
 #endregion
 
 
@@ -127,12 +128,12 @@ def tokens_to_ids(tokens, vocab, max_len=512):
     attention_mask = attention_mask + [0] * padding_length
     return token_ids, attention_mask
 
-print(df_train_nx['attention_mask'][15])
-
 # Apply the function to each tokenized sequence in dataframes without X or NEWLINE
 df_train['input_ids'], df_train['attention_mask'] = zip(*df_train['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 df_test['input_ids'], df_test['attention_mask'] = zip(*df_test['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 
+print(df_train['attention_mask'][15])
+print(df_train['input_ids'][15])
 #endregion
 
 #region Create PyTorch Datasets and DataLoaders
