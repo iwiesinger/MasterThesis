@@ -7,22 +7,26 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 from safetensors.torch import load_file
+from transformers import AutoFeatureExtractor
+
 #endregion
 
 
+Image.MAX_IMAGE_PIXELS = None
 
-
-#region Defining Custom class for handling both image and text data
+#region Custom Class + Dataset Creation
 class TransliterationWithImageDataset(Dataset):
-    def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512):
+    def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512, max_pixels=178956970):
         self.root_dir = root_dir
-        self.df = df.reset_index(drop=True)
         self.vocab = vocab
         self.feature_extractor = feature_extractor
         self.max_seq_len = max_seq_len
 
-        # Filter out rows where the corresponding image file doesn't exist
+        # Filter out rows where the corresponding image file doesn't exist, done once here
         self.df = df[df['_id'].apply(lambda x: os.path.exists(f"{self.root_dir}{x}.jpg"))].reset_index(drop=True)
+
+        # Cache for resized images
+        self.image_cache = {}
 
     def __len__(self):
         return len(self.df)
@@ -32,33 +36,33 @@ class TransliterationWithImageDataset(Dataset):
         id = self.df['_id'][idx]
         image_path = f"{self.root_dir}{id}.jpg"
         
-         # Load image and get the original size
-        image = Image.open(image_path).convert("RGB")
-        original_shape = image.size + (3,)  # Original width, height, channels
+        # Check if the resized image is already in cache
+        if id in self.image_cache:
+            pixel_values, original_shape, resized_shape = self.image_cache[id]
+        else:
+            # Load and resize image
+            image = Image.open(image_path).convert("RGB")
+            original_shape = image.size + (3,)  # Original width, height, channels
 
-        # Resize to approximately 50% of the original pixel count
-        scaling_factor = 0.707  # Scaling factor for 50% of the original pixel count
-        new_size = (int(original_shape[0] * scaling_factor), int(original_shape[1] * scaling_factor))
-        resized_image = image.resize(new_size)  # Resize while keeping aspect ratio
-        resized_shape = resized_image.size + (3,)  # Resized width, height, channels
+            # Resize to approximately 50% of the original pixel count
+            scaling_factor = 0.707
+            new_size = (int(original_shape[0] * scaling_factor), int(original_shape[1] * scaling_factor))
+            resized_image = image.resize(new_size)
+            resized_shape = resized_image.size + (3,)
 
-        # Process img
-        pixel_values = self.feature_extractor(resized_image, return_tensors="pt").pixel_values.squeeze()
-        
-        # Get input_ids and attention_mask from the dataframe
-        input_ids = self.df['input_ids'][idx]
-        attention_mask = self.df['attention_mask'][idx]
-        
-        # Convert to tensors
-        input_ids = torch.tensor(input_ids)
-        attention_mask = torch.tensor(attention_mask)
-        
-        # Replace padding token IDs with -100 to ignore them in the loss
+            # Process image through feature extractor
+            pixel_values = self.feature_extractor(resized_image, return_tensors="pt").pixel_values.squeeze()
+
+            # Cache the processed image data
+            self.image_cache[id] = (pixel_values, original_shape, resized_shape)
+
+        # Get input_ids and attention_mask from the DataFrame
+        input_ids = torch.tensor(self.df['input_ids'][idx])
+        attention_mask = torch.tensor(self.df['attention_mask'][idx])
+
+        # Replace padding token IDs with -100 to ignore them in loss
         labels = input_ids.clone()
         labels[input_ids == self.vocab['<PAD>']] = -100
-        
-        # Print shapes for debugging
-        print(f"Original shape: {original_shape}, Resized shape: {resized_shape}")
 
         return {
             'pixel_values': pixel_values,
@@ -68,14 +72,16 @@ class TransliterationWithImageDataset(Dataset):
             'original_shape': original_shape,
             'resized_shape': resized_shape
         }
+#endregion
 
+# Function to test image resizing
 def test_image_resizing(dataset, num_samples=10):
     for i in range(min(num_samples, len(dataset))):
         sample = dataset[i]
         original_shape = sample['original_shape']
         resized_shape = sample['resized_shape']
         
-        # Print original and resized shapes
+        # Print original and resized shapes for the first few samples
         print(f"Sample {i+1}")
         print(f"  Original shape: {original_shape}")
         print(f"  Resized shape: {resized_shape}")
@@ -85,23 +91,20 @@ def test_image_resizing(dataset, num_samples=10):
         resized_pixel_count = resized_shape[0] * resized_shape[1]
         print(f"  Pixel count reduced to {resized_pixel_count / original_pixel_count * 100:.2f}% of original size\n")
 
-
-#endregion
-
-#region Creating custom class datasets
+# Set up the dataset and test image resizing
 root_dir = '/home/ubuntu/MasterThesis/language_model_photos/'
-
-# Load SWIN feature extractor
-from transformers import AutoFeatureExtractor
 feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224")
 
-# Create datasets
-train_dataset_with_images = TransliterationWithImageDataset(df=df_train, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
-test_dataset_with_images = TransliterationWithImageDataset(df=df_test, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
+# Filter DataFrame for images that exist before creating datasets
+df_train_filtered = df_train[df_train['_id'].apply(lambda x: os.path.exists(f"{root_dir}{x}.jpg"))].reset_index(drop=True)
+df_test_filtered = df_test[df_test['_id'].apply(lambda x: os.path.exists(f"{root_dir}{x}.jpg"))].reset_index(drop=True)
 
+# Create datasets with filtered DataFrame
+train_dataset_with_images = TransliterationWithImageDataset(df=df_train_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
+test_dataset_with_images = TransliterationWithImageDataset(df=df_test_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 
+# Test the image resizing function
 test_image_resizing(train_dataset_with_images)
-print(type(train_dataset_with_images))
 
 # Create data loaders
 train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=15, shuffle=True)
@@ -138,6 +141,7 @@ pretrained_bert_path = '/home/ubuntu/MasterThesis/model_results_pretraining_trai
 # Load the model configurations
 bert_config = BertConfig.from_pretrained(pretrained_bert_path)
 bert_config.add_cross_attention = True  # Enable cross-attention for decoder
+print(f"Loaded vocabulary size from configuration: {bert_config.vocab_size}")
 
 swin_config = SwinConfig()
 config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(swin_config, bert_config)
@@ -159,6 +163,7 @@ print(start_size)
 #Swin size: 27.5M parameters\BERT size: 137.9M parameters
 #Swin+BERT size: 165.4M parameters
 
+output_dir = '/home/ubuntu/MasterThesis/finetuning_output/'
 # Write the strings
 def build_text_files(data_list, dest_path):
     f = open(dest_path, 'w')
@@ -170,7 +175,6 @@ build_text_files(start_size, output_dir + '/start_size.txt')
 #endregion
 
 #region Vocabulary Matching
-#from transformers import PreTrainedTokenizerFast
 
 # Special Token IDs
 model.config.pad_token_id = vocab['<PAD>']
@@ -203,27 +207,23 @@ epochs = 20*1
 batch_size = 15
 eval_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)
 logging_steps = eval_steps
-output_dir = '/home/ubuntu/MasterThesis/finetuning_output/'
+
 
 #endregion
 
 #model.decoder.load_state_dict(torch.load(pretrained_bert_path + "model.safetensors"))
 # Load the pretrained BERT weights from the safetensors file
-
 from safetensors.torch import safe_open
-from transformers import BertModel, VisionEncoderDecoderModel, SwinModel, SwinConfig, BertConfig, VisionEncoderDecoderConfig
 
+# Define the path to your pretrained .safetensors file
+safetensors_file = pretrained_bert_path + "model.safetensors"
 
-# Load weights from .safetensors file
+# Load weights from .safetensors file and update model.decoder
 with safe_open(safetensors_file, framework="pt", device="cpu") as f:
-    # Iterate through keys to load weights
-    state_dict = {}
-    for key in f.keys():
-        # Remove "bert." prefix from the keys if present
-        adjusted_key = key.replace("bert.", "")
-        state_dict[adjusted_key] = f.get_tensor(key)
+    # Iterate through keys to load weights and remove "bert." prefix if present
+    state_dict = {key.replace("bert.", ""): f.get_tensor(key) for key in f.keys()}
 
-# Load the adjusted weights into the model's decoder
+# Now load the state dict into the decoder part of the model
 model.decoder.load_state_dict(state_dict, strict=False)
 
 
