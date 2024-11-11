@@ -9,19 +9,20 @@ import numpy as np
 from safetensors.torch import load_file
 #endregion
 
-labels_path = '/home/ubuntu/MasterThesis/'
-model_path = '/home/ubuntu/MasterThesis/'
-output_dir = '/home/ubuntu/MasterThesis/'
+
+
 
 #region Defining Custom class for handling both image and text data
-
 class TransliterationWithImageDataset(Dataset):
-    def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=520):
+    def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512):
         self.root_dir = root_dir
         self.df = df.reset_index(drop=True)
         self.vocab = vocab
         self.feature_extractor = feature_extractor
         self.max_seq_len = max_seq_len
+
+        # Filter out rows where the corresponding image file doesn't exist
+        self.df = df[df['_id'].apply(lambda x: os.path.exists(f"{self.root_dir}{x}.jpg"))].reset_index(drop=True)
 
     def __len__(self):
         return len(self.df)
@@ -30,10 +31,19 @@ class TransliterationWithImageDataset(Dataset):
         # Get image file and text data
         id = self.df['_id'][idx]
         image_path = f"{self.root_dir}{id}.jpg"
-        image = Image.open(image_path).convert("RGB")
         
-        # Process image
-        pixel_values = self.feature_extractor(image, return_tensors="pt").pixel_values.squeeze()
+         # Load image and get the original size
+        image = Image.open(image_path).convert("RGB")
+        original_shape = image.size + (3,)  # Original width, height, channels
+
+        # Resize to approximately 50% of the original pixel count
+        scaling_factor = 0.707  # Scaling factor for 50% of the original pixel count
+        new_size = (int(original_shape[0] * scaling_factor), int(original_shape[1] * scaling_factor))
+        resized_image = image.resize(new_size)  # Resize while keeping aspect ratio
+        resized_shape = resized_image.size + (3,)  # Resized width, height, channels
+
+        # Process img
+        pixel_values = self.feature_extractor(resized_image, return_tensors="pt").pixel_values.squeeze()
         
         # Get input_ids and attention_mask from the dataframe
         input_ids = self.df['input_ids'][idx]
@@ -47,12 +57,34 @@ class TransliterationWithImageDataset(Dataset):
         labels = input_ids.clone()
         labels[input_ids == self.vocab['<PAD>']] = -100
         
+        # Print shapes for debugging
+        print(f"Original shape: {original_shape}, Resized shape: {resized_shape}")
+
         return {
             'pixel_values': pixel_values,
             'input_ids': input_ids,
             'attention_mask': attention_mask,
-            'labels': labels
+            'labels': labels,
+            'original_shape': original_shape,
+            'resized_shape': resized_shape
         }
+'''
+def test_image_resizing(dataset, num_samples=10):
+    for i in range(min(num_samples, len(dataset))):
+        sample = dataset[i]
+        original_shape = sample['original_shape']
+        resized_shape = sample['resized_shape']
+        
+        # Print original and resized shapes
+        print(f"Sample {i+1}")
+        print(f"  Original shape: {original_shape}")
+        print(f"  Resized shape: {resized_shape}")
+        
+        # Compare sizes
+        original_pixel_count = original_shape[0] * original_shape[1]
+        resized_pixel_count = resized_shape[0] * resized_shape[1]
+        print(f"  Pixel count reduced to {resized_pixel_count / original_pixel_count * 100:.2f}% of original size\n")
+'''
 
 #endregion
 
@@ -67,15 +99,20 @@ feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-pa
 train_dataset_with_images = TransliterationWithImageDataset(df=df_train, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 test_dataset_with_images = TransliterationWithImageDataset(df=df_test, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 
+
+test_image_resizing(train_dataset_with_images)
+print(type(train_dataset_with_images))
+
 # Create data loaders
-train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=20, shuffle=True)
-test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=20)
+train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=15, shuffle=True)
+test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=15)
 
-print('Number of training examples:', len(train_dataset_with_images))
-print('Number of test examples:', len(test_dataset_with_images))
+print('Number of training examples:', len(train_dataset_with_images)) # 16,374 images
+print('Number of test examples:', len(test_dataset_with_images)) # 2,886 images
 
+#region Test Encoding
 # Verifying example from training dataset
-encoding = train_dataset_with_images[0]
+'''encoding = train_dataset_with_images[0]
 print(encoding)
 for k,v in encoding.items():
     print(k,v.shape) #69 signs
@@ -90,28 +127,28 @@ labels = encoding['labels']
 decoded_tokens = [inv_vocab[id.item()] for id in labels if id.item() != -100]
 decoded_text = " ".join(decoded_tokens)
 print("Decoded text:", decoded_text)
-print(len(decoded_text))
+print(len(decoded_text))'''
+#endregion
 #endregion
 
-#region loading in the pretrained BERT weights
-from transformers import BertModel, VisionEncoderDecoderModel, SwinModel, SwinConfig, BertConfig, VisionEncoderDecoderConfig
+from transformers import BertLMHeadModel, VisionEncoderDecoderModel, SwinModel, SwinConfig, BertConfig, VisionEncoderDecoderConfig
 
 pretrained_bert_path = '/home/ubuntu/MasterThesis/model_results_pretraining_train_test/checkpoint-11196/'
 
-# BERT configuration and model
+# Load the model configurations
 bert_config = BertConfig.from_pretrained(pretrained_bert_path)
-bert_model = BertModel.from_pretrained(pretrained_bert_path)
+bert_config.add_cross_attention = True  # Enable cross-attention for decoder
 
-# Fision encoder (Swin)
 swin_config = SwinConfig()
-swin_model = SwinModel(swin_config)
-
-# Combination into VisionEncoderDecoderModel
 config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(swin_config, bert_config)
+
+# Initialize the Swin+BERT VisionEncoderDecoder model
 model = VisionEncoderDecoderModel(config=config)
 
-# Decoder is pretrained BERT model
-model.decoder = bert_model
+# Initialize the encoder and decoder separately
+model.encoder = SwinModel(swin_config)
+model.decoder = BertLMHeadModel.from_pretrained(pretrained_bert_path, config=bert_config)  # Use BERT with cross-attention enabled
+
 
 def  model_size(model):
   return sum(t.numel() for t in model.parameters())
@@ -143,54 +180,101 @@ model.config.vocab_size = len(vocab)  # Number of unique tokens
 model.decoder.resize_token_embeddings(len(vocab))
 
 print(f"Model config:\nPad token ID: {model.config.pad_token_id}\nBOS token ID: {model.config.decoder_start_token_id}\nEOS token ID: {model.config.eos_token_id}\nUnknown token ID: {model.config.unk_token_id}\nVocab size: {model.config.vocab_size}")
+
+# Beam search parameters
+model.config.early_stopping = True
+model.config.max_length = 134 # covers 80% of all observations in length
+#model.config.no_repeat_ngram_size = 100
+model.config.length_penalty = 2.0
+model.config.num_beams = 4
+
+epochs = 20*1
+batch_size = 15
+eval_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)
+logging_steps = eval_steps
+output_dir = '/home/ubuntu/MasterThesis/finetuning_output/'
+
 #endregion
 
 #model.decoder.load_state_dict(torch.load(pretrained_bert_path + "model.safetensors"))
 # Load the pretrained BERT weights from the safetensors file
 
-pretrained_weights = load_file(pretrained_bert_path + "model.safetensors")
-for key in pretrained_weights.keys():
-    print(key)
-# Remove "bert." prefix from the keys
-adjusted_weights = {k.replace("bert.", ""): v for k, v in pretrained_weights.items()}
-model.decoder.load_state_dict(pretrained_weights)
+from safetensors.torch import safe_open
+from transformers import BertModel, VisionEncoderDecoderModel, SwinModel, SwinConfig, BertConfig, VisionEncoderDecoderConfig
+
+
+# Load weights from .safetensors file
+with safe_open(safetensors_file, framework="pt", device="cpu") as f:
+    # Iterate through keys to load weights
+    state_dict = {}
+    for key in f.keys():
+        # Remove "bert." prefix from the keys if present
+        adjusted_key = key.replace("bert.", "")
+        state_dict[adjusted_key] = f.get_tensor(key)
+
+# Load the adjusted weights into the model's decoder
+model.decoder.load_state_dict(state_dict, strict=False)
+
+
+# Verify loaded weights by checking the model size
+def model_size(model):
+    return sum(t.numel() for t in model.parameters())
+
+print(f'Start Size:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M parameters\nBERT size: {model_size(model.decoder)/1000**2:.1f}M parameters\nSwin+BERT size: {model_size(model)/1000**2:.1f}M parameters')
 
 #region Training setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
+torch.cuda.empty_cache()
 model.to(device)
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
+import wandb
+from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, DataCollatorWithPadding
 
-epochs=60*1
-batch_size=20
-eval_steps = np.round(len(train_df)/batch_size*epochs/20,0)
-logging_steps=eval_steps
+# Initialize wandb
+wandb.init(project="master_thesis_finetuning", name="first_try")
+
+# Update the model/num_parameters key with allow_val_change=True
+wandb.config.update({"model/num_parameters": model.num_parameters()}, allow_val_change=True)
+
 
 # Training arguments
 training_args = Seq2SeqTrainingArguments(
     predict_with_generate=True,
-    evaluation_strategy="steps",  
+    eval_strategy="steps",  
     num_train_epochs=epochs,  
     per_device_train_batch_size=batch_size,
     per_device_eval_batch_size=batch_size,
     fp16=True,
-    save_steps=500,  
+    save_steps=1000,  
     output_dir=output_dir,  
+    logging_dir='./logs',
     logging_steps=logging_steps,  
     eval_steps=eval_steps,  
+    report_to="wandb",
+    save_total_limit=3,
 )
+
+from transformers import default_data_collator
 
 # Load the datasets and define the trainer
 trainer = Seq2SeqTrainer(
     model=model,
-    tokenizer=tokenizer,
     args=training_args,
     train_dataset=train_dataset_with_images,
-    eval_dataset=val_dataset_with_images,
+    eval_dataset=test_dataset_with_images,
     data_collator=default_data_collator
 )
 
+# Start training with wandb logging enabled
+trainer.train()
 
+# Run final evaluation
+final_results = trainer.evaluate()
+print("Final Evaluation Results:", final_results)
+
+# Finish the wandb run
+wandb.finish()
 #endregion
 
 
@@ -254,13 +338,4 @@ class SyntheticDataset(Dataset):
 
 
 
-
-# Load architectures in the model
-config_encoder = SwinConfig()
-config_decoder = BertConfig()
-
-
-# Group architectures and define model
-config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(config_encoder, config_decoder)
-model = VisionEncoderDecoderModel(config=config)
 

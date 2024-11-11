@@ -55,6 +55,23 @@ print(len(df_raw)) # 22054
 print(len(df_tok)) # 21953 -> 61 rows removed.
 print(type(df_raw))
 print(df_tok.columns)
+print(type(df_tok['tok_signs']))
+print(df_tok['tok_signs'])
+
+
+# Calculate the length of each entry in 'tok_signs'
+df_tok['tok_signs_length'] = df_tok['tok_signs'].apply(len)
+
+# Get summary statistics
+summary_stats = df_tok['tok_signs_length'].describe(percentiles=[0.25, 0.5, 0.75, 0.8, 0.9])
+print(summary_stats)
+#mean       106.462737
+#std        203.128378
+#min          3.000000
+#25%         19.000000
+#50%         44.000000
+#75%        108.000000
+#max       3899.000000
 #endregion
 
 #region Removing uninformative rows
@@ -128,12 +145,24 @@ def tokens_to_ids(tokens, vocab, max_len=512):
     attention_mask = attention_mask + [0] * padding_length
     return token_ids, attention_mask
 
-# Apply the function to each tokenized sequence in dataframes without X or NEWLINE
+def tokens_to_labels(token_ids, pad_token_id=0):
+    # [PAD] tokens -> -100 in the labels
+    return [id if id != pad_token_id else -100 for id in token_ids]
+
+
+# Create input IDs and attention masks for both datasets
 df_train['input_ids'], df_train['attention_mask'] = zip(*df_train['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 df_test['input_ids'], df_test['attention_mask'] = zip(*df_test['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 
+
+# Convert input_ids to labels, setting [PAD] tokens to -100
+df_train['labels'] = df_train['input_ids'].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab['<PAD>']))
+df_test['labels'] = df_test['input_ids'].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab['<PAD>']))
+
+print(df_train[['input_ids', 'attention_mask', 'labels']].head())
 print(df_train['attention_mask'][15])
 print(df_train['input_ids'][15])
+print(df_train['labels'][15])
 #endregion
 
 #region Create PyTorch Datasets and DataLoaders
@@ -144,13 +173,14 @@ class TransliterationDataset(Dataset):
     def __init__(self, df):
         self.input_ids = torch.tensor(df['input_ids'].tolist())
         self.attention_mask = torch.tensor(df['attention_mask'].tolist())
+        self.labels = torch.tensor(df['labels'].tolist())
     def __len__(self):
         return len(self.input_ids)
     def __getitem__(self, idx):
         return {
             'input_ids': self.input_ids[idx],
             'attention_mask': self.attention_mask[idx],
-            'labels': self.input_ids[idx]  # Using input_ids as labels for MLM
+            'labels': self.labels[idx]  
         }
 
 # Create datasets without X
@@ -318,4 +348,41 @@ print("Test Perplexity: ", test_perplexity)
 # End wandb logging
 wandb.finish()
 #endregion
+
+#region Testing existing BertLMHead on test data with padding tokens == -100
+from transformers import BertLMHeadModel, Trainer, TrainingArguments
+import math
+
+# Load the trained model from the checkpoint
+model_path = "/home/ubuntu/MasterThesis/model_results_pretraining_train_test/checkpoint-11196/"
+model = BertLMHeadModel.from_pretrained(model_path)
+
+# Re-create the test dataset with the updated TransliterationDataset class
+test_dataset = TransliterationDataset(df_test) 
+
+# Define evaluation arguments
+training_args = TrainingArguments(
+    output_dir=model_path,
+    per_device_eval_batch_size=20,
+    logging_dir='./logs',
+    report_to="none"  # Disable logging to wandb or other services during evaluation
+)
+
+# Initialize the Trainer with only evaluation dataset
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    eval_dataset=test_dataset
+)
+
+# Run evaluation on the test dataset
+test_result = trainer.evaluate()
+print("Test Loss: ", test_result['eval_loss'])
+
+# Calculate perplexity from the evaluation loss
+test_perplexity = math.exp(test_result['eval_loss'])
+print("Test Perplexity: ", test_perplexity)
+
+#endregion
+
 #endregion
