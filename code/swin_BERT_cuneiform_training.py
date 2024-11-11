@@ -140,8 +140,11 @@ pretrained_bert_path = '/home/ubuntu/MasterThesis/model_results_pretraining_trai
 
 # Load the model configurations
 bert_config = BertConfig.from_pretrained(pretrained_bert_path)
+print("Configured vocab size:", bert_config.vocab_size)
 bert_config.add_cross_attention = True  # Enable cross-attention for decoder
 print(f"Loaded vocabulary size from configuration: {bert_config.vocab_size}")
+print("Configured vocab size:", bert_config.vocab_size)
+bert_config.vocab_size = 6171 
 
 swin_config = SwinConfig()
 config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(swin_config, bert_config)
@@ -151,7 +154,7 @@ model = VisionEncoderDecoderModel(config=config)
 
 # Initialize the encoder and decoder separately
 model.encoder = SwinModel(swin_config)
-model.decoder = BertLMHeadModel.from_pretrained(pretrained_bert_path, config=bert_config)  # Use BERT with cross-attention enabled
+model.decoder = BertLMHeadModel.from_pretrained(pretrained_bert_path, config=bert_config, ignore_mismatched_sizes=True)
 
 
 def  model_size(model):
@@ -218,12 +221,11 @@ from safetensors.torch import safe_open
 # Define the path to your pretrained .safetensors file
 safetensors_file = pretrained_bert_path + "model.safetensors"
 
-# Load weights from .safetensors file and update model.decoder
 with safe_open(safetensors_file, framework="pt", device="cpu") as f:
     # Iterate through keys to load weights and remove "bert." prefix if present
     state_dict = {key.replace("bert.", ""): f.get_tensor(key) for key in f.keys()}
 
-# Now load the state dict into the decoder part of the model
+# Load the state dict into the decoder part of the model after the `with` block
 model.decoder.load_state_dict(state_dict, strict=False)
 
 
@@ -247,7 +249,7 @@ import wandb
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, DataCollatorWithPadding
 
 # Initialize wandb
-wandb.init(project="master_thesis_finetuning", name="first_try")
+wandb.init(project="master_thesis_finetuning", name="second_try")
 
 # Update the model/num_parameters key with allow_val_change=True
 wandb.config.update({"model/num_parameters": model.num_parameters()}, allow_val_change=True)
