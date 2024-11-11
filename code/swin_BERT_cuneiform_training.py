@@ -68,7 +68,7 @@ class TransliterationWithImageDataset(Dataset):
             'original_shape': original_shape,
             'resized_shape': resized_shape
         }
-'''
+
 def test_image_resizing(dataset, num_samples=10):
     for i in range(min(num_samples, len(dataset))):
         sample = dataset[i]
@@ -84,7 +84,7 @@ def test_image_resizing(dataset, num_samples=10):
         original_pixel_count = original_shape[0] * original_shape[1]
         resized_pixel_count = resized_shape[0] * resized_shape[1]
         print(f"  Pixel count reduced to {resized_pixel_count / original_pixel_count * 100:.2f}% of original size\n")
-'''
+
 
 #endregion
 
@@ -155,6 +155,9 @@ def  model_size(model):
 
 start_size = f'START SIZE:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M parameters\BERT size: {model_size(model.decoder)/1000**2:.1f}M parameters\nSwin+BERT size: {model_size(model)/1000**2:.1f}M parameters\n'
 print(start_size)
+#START SIZE:
+#Swin size: 27.5M parameters\BERT size: 137.9M parameters
+#Swin+BERT size: 165.4M parameters
 
 # Write the strings
 def build_text_files(data_list, dest_path):
@@ -180,6 +183,14 @@ model.config.vocab_size = len(vocab)  # Number of unique tokens
 model.decoder.resize_token_embeddings(len(vocab))
 
 print(f"Model config:\nPad token ID: {model.config.pad_token_id}\nBOS token ID: {model.config.decoder_start_token_id}\nEOS token ID: {model.config.eos_token_id}\nUnknown token ID: {model.config.unk_token_id}\nVocab size: {model.config.vocab_size}")
+#Model config:
+#Pad token ID: 0
+#BOS token ID: 2
+#EOS token ID: 34
+#Unknown token ID: 1
+#Vocab size: 6171
+
+
 
 # Beam search parameters
 model.config.early_stopping = True
@@ -221,6 +232,10 @@ def model_size(model):
     return sum(t.numel() for t in model.parameters())
 
 print(f'Start Size:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M parameters\nBERT size: {model_size(model.decoder)/1000**2:.1f}M parameters\nSwin+BERT size: {model_size(model)/1000**2:.1f}M parameters')
+#Start Size:
+#Swin size: 27.5M parameters
+#BERT size: 119.2M parameters
+#Swin+BERT size: 146.7M parameters
 
 #region Training setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
