@@ -1,3 +1,4 @@
+#region #### General Settings and Imports ####
 
 #region Import packages
 import os
@@ -23,7 +24,9 @@ pretrained_bert_path = '/home/ubuntu/MasterThesis/model_results_pretraining_trai
 output_dir = '/home/ubuntu/MasterThesis/finetuning_output/'
 safetensors_file = pretrained_bert_path + "model.safetensors"
 #endregion
+#endregion
 
+#region #### Data Prep ####
 #region Custom Class + Dataset Creation
 class TransliterationWithImageDataset(Dataset):
     def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512, max_pixels=178956970):
@@ -122,7 +125,9 @@ test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=15)
 print('Number of training examples:', len(train_dataset_with_images)) # 16,374 images
 print('Number of test examples:', len(test_dataset_with_images)) # 2,886 images
 #endregion
+#endregion 
 
+#region #### Model Setup ####
 #region Model setup & initialization: Swin & BERT
 # Load the model configurations for Swin & BERT
 bert_config = BertConfig.from_pretrained(pretrained_bert_path)
@@ -217,7 +222,9 @@ print(f'Start Size:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M paramet
 #Swin+BERT size: 146.7M parameters
 # -> Model size SMALLER - maybe because of smaller vocab?
 #endregion
+#endregion
 
+#region #### Training ####
 #region Training setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -269,7 +276,7 @@ print("Final Evaluation Results:", final_results)
 # Finish the wandb run
 wandb.finish()
 #endregion
-
+#endregion
 
 
 
