@@ -20,7 +20,7 @@ from transformers import default_data_collator
 #region General settings and directories
 Image.MAX_IMAGE_PIXELS = None
 root_dir = '/home/ubuntu/MasterThesis/language_model_photos/'
-pretrained_bert_path = '/home/ubuntu/MasterThesis/model_results_pretraining_train_test/checkpoint-11196/'
+pretrained_bert_path = '/home/ubuntu/MasterThesis/results_pretrain_2024112_noval/'
 output_dir = '/home/ubuntu/MasterThesis/finetuning_output/'
 safetensors_file = pretrained_bert_path + "model.safetensors"
 #endregion
@@ -115,16 +115,46 @@ df_test_filtered = df_test[df_test['_id'].apply(lambda x: os.path.exists(f"{root
 train_dataset_with_images = TransliterationWithImageDataset(df=df_train_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 test_dataset_with_images = TransliterationWithImageDataset(df=df_test_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 
+
 # Test image resizing function
 test_image_resizing(train_dataset_with_images)
 
 # Create data loaders
-train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=15, shuffle=True)
-test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=15)
+train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=10, shuffle=True)
+test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=10)
 
 print('Number of training examples:', len(train_dataset_with_images)) # 16,374 images
 print('Number of test examples:', len(test_dataset_with_images)) # 2,886 images
 #endregion
+
+#region test input_ids, attention_masks and labels are transferrred correctly
+def test_input_ids_attention_mask_labels(dataset, original_df, num_samples=5):
+    for i in range(min(num_samples, len(dataset))):
+        sample = dataset[i]
+        input_ids = sample['input_ids']
+        attention_mask = sample['attention_mask']
+        labels = sample['labels']
+
+        print(f"Sample {i+1}")
+        print(f"  Input IDs: {input_ids.tolist()}")
+        print(f"  Attention Mask: {attention_mask.tolist()}")
+        print(f"Labels: {labels.tolist()}")
+
+        # Verify that input_ids and attention_mask match the original DataFrame
+        original_input_ids = original_df['input_ids'][i]
+        original_attention_mask = original_df['attention_mask'][i]
+        original_label = original_df['labels'][i]
+
+        print(f"  Matches Original Input IDs: {torch.equal(input_ids, torch.tensor(original_input_ids))}")
+        print(f"  Matches Original Attention Mask: {torch.equal(attention_mask, torch.tensor(original_attention_mask))}\n")
+        print(f"  Matches Original Labels: {torch.equal(labels, torch.tensor(original_label))}\n")
+        
+
+test_input_ids_attention_mask_labels(train_dataset_with_images, df_train_filtered)
+
+
+#endregion
+
 #endregion 
 
 #region #### Model Setup ####
@@ -144,7 +174,7 @@ model = VisionEncoderDecoderModel(config=config)
 
 # Initialize the encoder and decoder separately
 model.encoder = SwinModel(swin_config)
-model.decoder = BertLMHeadModel.from_pretrained(pretrained_bert_path, config=bert_config, ignore_mismatched_sizes=True)
+model.decoder = BertLMHeadModel.from_pretrained(pretrained_bert_path, config=bert_config)
 #endregion
 
 #region Model statistics and documentation
@@ -154,8 +184,8 @@ def  model_size(model):
 start_size = f'START SIZE:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M parameters\BERT size: {model_size(model.decoder)/1000**2:.1f}M parameters\nSwin+BERT size: {model_size(model)/1000**2:.1f}M parameters\n'
 print(start_size)
 #START SIZE:
-#Swin size: 27.5M parameters\BERT size: 137.9M parameters
-#Swin+BERT size: 165.4M parameters
+#Swin size: 27.5M parameters\BERT size: 119.2M parameters
+#Swin+BERT size: 146.7M parameters
 
 # Write the strings
 def build_text_files(data_list, dest_path):
@@ -193,8 +223,8 @@ model.config.max_length = 134 # covers 80% of all observations in length
 model.config.length_penalty = 2.0
 model.config.num_beams = 4
 
-epochs = 20*1
-batch_size = 15
+epochs = 10*1
+batch_size = 10
 eval_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)
 logging_steps = eval_steps
 #endregion
@@ -204,10 +234,18 @@ logging_steps = eval_steps
 # Hintergrund: I got an error message when opening the safetensors file about the BERT prefixes
 
 with safe_open(safetensors_file, framework="pt", device="cpu") as f:
-    state_dict = {key.replace("bert.", ""): f.get_tensor(key) for key in f.keys()} # remove "bert." prefix 
+    state_dict = {key: f.get_tensor(key) for key in f.keys()}
 
+# Filter weights that match the SwinBERT decoder
+filtered_state_dict = {key: value for key, value in state_dict.items() if "bert." in key}
+# Load only matching weights
+missing_keys, unexpected_keys = model.decoder.load_state_dict(filtered_state_dict, strict=False)
+print(f"Missing keys: {missing_keys}")
+print(f"Unexpected keys: {unexpected_keys}")
+
+# Initialize missing layers (cross-attention)
+model.decoder.apply(model.decoder._init_weights)  # Randomly initializes only the missing layers
 # Load state dict into decoder 
-model.decoder.load_state_dict(state_dict, strict=False)
 #model.decoder.load_state_dict(torch.load(pretrained_bert_path + "model.safetensors"))
 
 
@@ -232,7 +270,7 @@ torch.cuda.empty_cache()
 model.to(device)
 
 # Initialize wandb
-wandb.init(project="master_thesis_finetuning", name="second_try")
+wandb.init(project="master_thesis_finetuning", name="fourth_try")
 
 # Update the model/num_parameters key with allow_val_change=True
 wandb.config.update({"model/num_parameters": model.num_parameters()}, allow_val_change=True) # Relikt - als es noch der first_try war, der oft gefailt ist
