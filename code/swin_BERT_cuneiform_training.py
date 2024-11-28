@@ -14,6 +14,7 @@ from safetensors.torch import safe_open
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments
 import wandb
 from transformers import default_data_collator
+from torchmetrics import WordErrorRate
 
 #endregion
 
@@ -25,6 +26,175 @@ output_dir = '/home/ubuntu/MasterThesis/finetuning_output/'
 safetensors_file = pretrained_bert_path + "model.safetensors"
 #endregion
 #endregion
+
+
+#region Code to generate dataset from pretraining
+#region Read and get overview over raw data
+#JSON file path
+import json
+file_path = 'data/Akkadian.json'
+
+import os
+os.getcwd()
+
+
+# Check if the file exists and is readable
+if os.path.exists(file_path) and os.access(file_path, os.R_OK):
+    try:
+        # Open and load data
+        with open(file_path, 'r') as file:
+            raw_data = json.load(file)
+            print(f"Data is readable")
+    except Exception as e:
+        print(f"An error occurred while reading the file: {e}")
+else:
+    print("The file does not exist or is not readable.")
+
+# Length of the list
+list_length = len(raw_data)
+print(f"The raw data has {list_length} items.")
+
+# Types of elements
+element_types = set(type(item) for item in raw_data)
+print(f"The list contains items of types: {element_types}")
+
+# convert into dataframe
+import pandas as pd
+df_raw = pd.DataFrame(raw_data)
+#endregion
+
+#region Tokenizing the data and removing duplicates
+
+# Filter out X and Newline
+def tokenize_signs_exc_x(signs):
+    signs = signs.replace('\n', ' <NEWLINE> ')  # Replace newline with special token
+    tokens = signs.split()  # Split signs by whitespace
+    tokens = ['<BOS>'] + [token for token in tokens if token not in ['X', '<NEWLINE>']] + ['<EOS>']  # Filter out 'X' and '<NEWLINE>'
+    return tokens
+
+
+df_tok = df_raw.copy()
+df_tok['tok_signs'] = df_tok['signs'].apply(tokenize_signs_exc_x)
+df_tok = df_tok.drop_duplicates(subset=['tok_signs'])
+print(df_tok.head())
+print(len(df_raw)) # 22054
+print(len(df_tok)) # 21953 -> 61 rows removed.
+print(type(df_raw))
+print(df_tok.columns)
+print(type(df_tok['tok_signs']))
+print(df_tok['tok_signs'])
+
+
+# Calculate the length of each entry in 'tok_signs'
+df_tok['tok_signs_length'] = df_tok['tok_signs'].apply(len)
+
+# Get summary statistics
+summary_stats = df_tok['tok_signs_length'].describe(percentiles=[0.25, 0.5, 0.75, 0.8, 0.9])
+print(summary_stats)
+#mean       106.462737
+#std        203.128378
+#min          3.000000
+#25%         19.000000
+#50%         44.000000
+#75%        108.000000
+#max       3899.000000
+#endregion
+
+#region Removing uninformative rows
+# sets of uninformative tokens
+uninformative_tokens = {'<BOS>', '<NEWLINE>', '<EOS>', 'X'}
+
+# Function to check if a row contains only uninformative tokens
+def is_informative(tokens):
+    return not all(token in uninformative_tokens for token in tokens)
+
+# Filter rows to include only informative tokens
+df_tok = df_tok[df_tok['tok_signs'].apply(is_informative)]
+print(len(df_tok)) #21953 -> nothing changed.
+
+# Find rows where 'tok_signs' is empty
+empty_tok_signs = df_tok[df_tok['tok_signs'].apply(lambda tokens: len(tokens) == 0 if isinstance(tokens, list) else True)]
+print(empty_tok_signs)
+# none left :-) so all is tokenized nicely!
+
+# Reset index 
+df_tok.reset_index(drop=True, inplace=True)
+#endregion
+
+#region Implement train- and test split: 0.85 training data, 0.15 test data
+random_seed = 42
+df_shuffled = df_tok.sample(frac=1, random_state = random_seed).reset_index(drop=True)
+print(df_shuffled.head())
+
+def train_val_test_split(df):
+    train_split = int(0.85*len(df))
+    df_train = df[:train_split]
+    df_test= df[train_split:]
+    return df_train, df_test
+
+df_train, df_test = train_val_test_split(df_shuffled)
+print(df_train.head())
+#endregion
+
+#region Create Vocabulary and inversed vocabulary
+from collections import Counter
+
+# Flatten the list of tokenized signs
+all_tokens = [token for sublist in df_tok['tok_signs'] for token in sublist]
+print(all_tokens[9])
+
+# Count the frequency of each token
+token_counts = Counter(all_tokens)
+
+# Create a vocabulary with token to index mapping
+# Reserve indices 0-1 for special tokens
+vocab = {token: idx for idx, (token, _) in enumerate(token_counts.items(), start=2)}
+vocab['<PAD>'] = 0
+vocab['<UNK>'] = 1
+print(len(vocab))
+
+
+# Invert the vocabulary dictionary for decoding (if needed)
+inv_vocab = {idx: token for token, idx in vocab.items()}
+#endregion
+
+#region Convert tokenized data to input IDs and attention masks
+def tokens_to_ids(tokens, vocab, max_len=512):
+    token_ids = [vocab.get(token, vocab['<UNK>']) for token in tokens]
+    token_ids = token_ids[:max_len]  # Truncate to max_len
+    attention_mask = [1] * len(token_ids)
+    padding_length = max_len - len(token_ids)
+    token_ids = token_ids + [vocab['<PAD>']] * padding_length
+    attention_mask = attention_mask + [0] * padding_length
+    return token_ids, attention_mask
+
+def tokens_to_labels(token_ids, pad_token_id=0):
+    # [PAD] tokens -> -100 in the labels
+    return [id if id != pad_token_id else -100 for id in token_ids]
+
+
+# Create input IDs and attention masks for both datasets
+df_train['input_ids'], df_train['attention_mask'] = zip(*df_train['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
+df_test['input_ids'], df_test['attention_mask'] = zip(*df_test['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
+#df_val['input_ids'], df_val['attention_mask'] = zip(*df_val['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
+
+
+
+# Convert input_ids to labels, setting [PAD] tokens to -100
+df_train['labels'] = df_train['input_ids'].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab['<PAD>']))
+df_test['labels'] = df_test['input_ids'].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab['<PAD>']))
+#df_val['labels'] = df_val['input_ids'].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab['<PAD>']))
+
+
+print(df_train[['input_ids', 'attention_mask', 'labels']].head())
+print(df_train['attention_mask'][15])
+print(df_train['input_ids'][15])
+print(df_train['labels'][15])
+#endregion
+
+
+#endregion
+
 
 #region #### Data Prep ####
 #region Custom Class + Dataset Creation
@@ -120,8 +290,8 @@ test_dataset_with_images = TransliterationWithImageDataset(df=df_test_filtered, 
 test_image_resizing(train_dataset_with_images)
 
 # Create data loaders
-train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=10, shuffle=True)
-test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=10)
+train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=5, shuffle=True)
+test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=5)
 
 print('Number of training examples:', len(train_dataset_with_images)) # 16,374 images
 print('Number of test examples:', len(test_dataset_with_images)) # 2,886 images
@@ -223,8 +393,8 @@ model.config.max_length = 134 # covers 80% of all observations in length
 model.config.length_penalty = 2.0
 model.config.num_beams = 4
 
-epochs = 10*1
-batch_size = 10
+epochs = 20*1
+batch_size = 5
 eval_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)
 logging_steps = eval_steps
 #endregion
@@ -260,6 +430,30 @@ print(f'Start Size:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M paramet
 #Swin+BERT size: 146.7M parameters
 # -> Model size SMALLER - maybe because of smaller vocab?
 #endregion
+
+#region Evaluation Metric
+
+import wandb
+
+def compute_metrics(pred):
+    labels_ids = pred.label_ids
+    pred_ids = pred.predictions
+
+    # Decode predictions and labels
+    pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
+    labels_ids[labels_ids == -100] = processor.tokenizer.pad_token_id
+    label_str = processor.tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
+
+    # Calculate Token Error Rate (using WordErrorRate as a proxy for tokens)
+    metric = WordErrorRate()
+    ter = metric(pred_str, label_str)
+
+    # Log TER to wandb
+    wandb.log({"Token Error Rate (TER)": ter, "epoch": state.epoch})
+
+    return {"ter": ter}
+
+#endregion
 #endregion
 
 #region #### Training ####
@@ -267,10 +461,12 @@ print(f'Start Size:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M paramet
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 torch.cuda.empty_cache()
+torch.cuda.reset_peak_memory_stats()
+#export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64
 model.to(device)
 
 # Initialize wandb
-wandb.init(project="master_thesis_finetuning", name="fourth_try")
+wandb.init(project="master_thesis_finetuning", name="fifth_try")
 
 # Update the model/num_parameters key with allow_val_change=True
 wandb.config.update({"model/num_parameters": model.num_parameters()}, allow_val_change=True) # Relikt - als es noch der first_try war, der oft gefailt ist
@@ -299,7 +495,8 @@ trainer = Seq2SeqTrainer(
     args=training_args,
     train_dataset=train_dataset_with_images,
     eval_dataset=test_dataset_with_images,
-    data_collator=default_data_collator
+    data_collator=default_data_collator,
+    compute_metrics=compute_metrics  # Use the new TER metric
 )
 #endregion
 
@@ -310,6 +507,9 @@ trainer.train()
 # Run final evaluation
 final_results = trainer.evaluate()
 print("Final Evaluation Results:", final_results)
+
+
+
 
 # Finish the wandb run
 wandb.finish()
