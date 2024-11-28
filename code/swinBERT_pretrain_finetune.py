@@ -92,7 +92,7 @@ print(empty_tok_signs)
 # none left :-) so all is tokenized nicely!
 
 # Reset index 
-df_raw_nx.reset_index(drop=True, inplace=True)
+df_tok.reset_index(drop=True, inplace=True)
 #endregion
 
 #region Implement train- and test split: 0.7 training data, 0.15 validation data, 0.15 test data
@@ -129,6 +129,7 @@ token_counts = Counter(all_tokens)
 vocab = {token: idx for idx, (token, _) in enumerate(token_counts.items(), start=2)}
 vocab['<PAD>'] = 0
 vocab['<UNK>'] = 1
+print(len(vocab))
 
 
 # Invert the vocabulary dictionary for decoding (if needed)
@@ -188,8 +189,8 @@ train_dataset = TransliterationDataset(df_train)
 test_dataset = TransliterationDataset(df_test)
 
 # Create the dataloaders without X
-train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=20)
+train_loader = DataLoader(train_dataset, batch_size=24, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=24)
 #endregion
 
 #region Perplexity Callback
@@ -286,6 +287,7 @@ from transformers import BertLMHeadModel, Trainer, TrainingArguments, BertConfig
 from transformers.integrations import WandbCallback
 import torch
 import os
+from transformers import EarlyStoppingCallback
 
 torch.cuda.memory_summary(device=None, abbreviated=False)
 torch.cuda.empty_cache()
@@ -296,43 +298,44 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Initialize Weights and Biases for a new training run in the master_thesis project
-wandb.init(project="master_thesis", name="pretraining_train_test_run")
+wandb.init(project="master_thesis", name="pretraining_20241120_afterval")
 
 # Load the base pre-trained BERT model and its configuration
 config = BertConfig.from_pretrained('bert-base-uncased')
 config.is_decoder = True
-model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config)
+config.vocab_size = len(vocab)
+model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config, ignore_mismatched_sizes=True)
+model.resize_token_embeddings(len(vocab))
 
 # Create a folder to save models during this run
-output_dir = 'MasterThesis/model_results_pretraining_train_test'
+output_dir = 'MasterThesis/results_pretrain_20241120_noval/'
 
 # Define the training arguments
 training_args = TrainingArguments(
     output_dir=output_dir,             
-    num_train_epochs=12,               
-    per_device_train_batch_size=20,    
-    per_device_eval_batch_size=20,
-    warmup_steps=400,
-    weight_decay=0.01,
-    logging_dir='./logs',
-    logging_steps=100,
-    eval_strategy="no",          
-    save_strategy="epoch",            
+    num_train_epochs=10,               
+    per_device_train_batch_size=24,    
+    per_device_eval_batch_size=24,
+    warmup_steps=400,                 
+    weight_decay=0.01,                 
+    logging_dir='./logs',              
+    logging_steps=500,                 
+    eval_strategy="no",                
+    save_strategy="no",                
+    save_total_limit=1,                
     report_to="wandb",                 
-    load_best_model_at_end=False,
-    fp16=True      
+    load_best_model_at_end=False,     
+    fp16=True                          
 )
 
 # Initialize the Trainer using train and test datasets (without validation dataset)
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=train_dataset,       
-    eval_dataset=test_dataset,         
-    callbacks=[WandbCallback()]        
+    train_dataset=train_dataset,             
+    callbacks=[WandbCallback(), PerplexityCallback()]        
 )
 
-torch.cuda.empty_cache()
 
 # Train the model
 trainer.train()
@@ -344,6 +347,10 @@ print("Test Loss: ", test_result['eval_loss'])
 import math
 test_perplexity = math.exp(test_result['eval_loss'])
 print("Test Perplexity: ", test_perplexity)
+
+# Save the trained model to output_dir
+trainer.save_model(output_dir)
+print(f"Model saved to {output_dir}")
 
 # End wandb logging
 wandb.finish()
