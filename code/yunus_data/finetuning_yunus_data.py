@@ -26,16 +26,18 @@ from transformers import TrainerCallback
 #region General settings and directories
 Image.MAX_IMAGE_PIXELS = None
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-root_dir = '/home/ubuntu/MasterThesis/language_model_photos/'
-pretrained_bert_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/results_higherbatch/checkpoint-6500/'
-output_dir = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/finetuning_output/'
+root_dir_train = '/home/ubuntu/MasterThesis/yunus_photos/train2017/'
+root_dir_val = '/home/ubuntu/MasterThesis/yunus_photos/val2017'
+pretrained_bert_path = '/home/ubuntu/MasterThesis/code/yunus_data/seventh_try_15epochs_10batch/checkpoint-420/'
+output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/3rd_finetune_output_30epochs/'
 safetensors_file = pretrained_bert_path + "model.safetensors"
-train_data_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/df_train.json'
-val_data_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/df_val.json'
-test_data_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/df_test.json'
-vocab_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/vocab.json'
-inv_vocab_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/inv_vocab.json'
+train_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train.json'
+val_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val.json'
+#test_data_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/df_test.json'
+vocab_path = '/home/ubuntu/MasterThesis/code/yunus_data/vocab.json'
+inv_vocab_path = '/home/ubuntu/MasterThesis/code/yunus_data/inv_vocab.json'
 #endregion
+
 
 #region Import datasets and (inv) vocab from pretraining
 with open(train_data_path, 'r') as f:
@@ -44,8 +46,8 @@ with open(train_data_path, 'r') as f:
 with open(val_data_path, 'r') as f:
     df_val = pd.DataFrame(json.load(f))
 
-with open(test_data_path, 'r') as f:
-    df_test = pd.DataFrame(json.load(f))
+#with open(test_data_path, 'r') as f:
+#    df_test = pd.DataFrame(json.load(f))
 
 with open(vocab_path, 'r') as f:
     vocab = json.load(f)
@@ -59,11 +61,25 @@ for key, value in list(vocab.items())[:5]:
 vocab = {key: int(value) for key, value in vocab.items()}
 #endregion
 
+print(len(df_val))
+print(len(df_train))
+
+print(df_train.head())
+
+# Compute the lengths of lists in the 'tok_signs' column
+df_train['tok_signs_length'] = df_train['tok_signs'].apply(len)
+length_stats = df_train['tok_signs_length'].describe()
+print(length_stats)
+
+quantiles_10_percent = df_train['tok_signs_length'].quantile([i / 10 for i in range(11)])
+quantiles_10_percent
+
 #endregion
 
+print(df_train.head())
 
 #region #### Data Prep ####
-#region Custom Class + Dataset Creation
+#region OLD Custom Class + Dataset Creation
 class TransliterationWithImageDataset(Dataset):
     def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512, max_pixels=178956970):
         self.root_dir = root_dir
@@ -144,8 +160,50 @@ class TransliterationWithImageDataset(Dataset):
             }
 #endregion
 
+#region NEW Custom Class + Dataset Creation
+# Function for custom dataset creation
+class TransliterationWithImageDataset(Dataset):
+    def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512):
+        self.root_dir = root_dir
+        self.df = df
+        self.vocab = vocab
+        self.feature_extractor = feature_extractor
+        self.max_seq_len = max_seq_len
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        img_name = self.df.iloc[idx]['img_name']
+        image_path = os.path.join(self.root_dir, img_name)
+
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except OSError:
+            raise RuntimeError(f"Image at {image_path} could not be opened.")
+
+        # Process image
+        pixel_values = self.feature_extractor(image, return_tensors="pt").pixel_values.squeeze()
+
+        # Get input_ids and attention_mask
+        input_ids = torch.tensor(self.df.iloc[idx]['input_ids'])
+        attention_mask = torch.tensor(self.df.iloc[idx]['attention_mask'])
+
+        # Replace padding token IDs with -100 to ignore them in loss calculation
+        labels = input_ids.clone()
+        labels[input_ids == self.vocab['<PAD>']] = -100
+
+        return {
+            "pixel_values": pixel_values,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels
+        }
+
+#endregion
+
 #region Creating image+text dataframes and dataloaders
-def test_image_resizing(dataset, num_samples=10):
+'''def test_image_resizing(dataset, num_samples=10):
     for i in range(min(num_samples, len(dataset))):
         sample = dataset[i]
         original_shape = sample['original_shape']
@@ -160,11 +218,18 @@ def test_image_resizing(dataset, num_samples=10):
         original_pixel_count = original_shape[0] * original_shape[1]
         resized_pixel_count = resized_shape[0] * resized_shape[1]
         print(f"  Pixel count reduced to {resized_pixel_count / original_pixel_count * 100:.2f}% of original size\n")
+'''
 
 # feature extractor
 feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224")
 
-# Filter DataFrame for images that exist - before creating datasets
+#region Dataset Creation
+train_dataset_with_images = TransliterationWithImageDataset(root_dir=root_dir_train, df=df_train, vocab=vocab, feature_extractor=feature_extractor)
+val_dataset_with_images = TransliterationWithImageDataset(root_dir=root_dir_val, df=df_val, vocab=vocab, feature_extractor=feature_extractor)
+#endregion
+
+#region Hopefully OLD
+'''# Filter DataFrame for images that exist - before creating datasets
 df_train_filtered = df_train[df_train['_id'].apply(lambda x: os.path.exists(f"{root_dir}{x}.jpg"))].reset_index(drop=True)
 df_val_filtered = df_val[df_val['_id'].apply(lambda x: os.path.exists(f"{root_dir}{x}.jpg"))].reset_index(drop=True)
 df_test_filtered = df_test[df_test['_id'].apply(lambda x: os.path.exists(f"{root_dir}{x}.jpg"))].reset_index(drop=True)
@@ -173,24 +238,25 @@ df_test_filtered = df_test[df_test['_id'].apply(lambda x: os.path.exists(f"{root
 train_dataset_with_images = TransliterationWithImageDataset(df=df_train_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 val_dataset_with_images = TransliterationWithImageDataset(df=df_val_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
 test_dataset_with_images = TransliterationWithImageDataset(df=df_test_filtered, root_dir=root_dir, feature_extractor=feature_extractor, vocab=vocab)
-
-
+'''
 # Test image resizing function
-test_image_resizing(train_dataset_with_images)
+#test_image_resizing(train_dataset_with_images)
+#endregion
+
 
 # Create data loaders
 train_loader_with_images = DataLoader(train_dataset_with_images, batch_size=10, shuffle=True)
-val_loader_with_images = DataLoader(val_dataset_with_images, batch_size=10, shuffle=True)
-test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=10)
+val_loader_with_images = DataLoader(val_dataset_with_images, batch_size=10)
+#test_loader_with_images = DataLoader(test_dataset_with_images, batch_size=10)
 
-print('Number of training examples:', len(train_dataset_with_images)) # 16,374 images
-print('Number of validation examples:', len(val_dataset_with_images)) # 2,868 images
-print('Number of test examples:', len(test_dataset_with_images)) # 2,886 images
+print('Number of training examples:', len(train_dataset_with_images)) # 554 images
+print('Number of validation examples:', len(val_dataset_with_images)) # 100 images
+#print('Number of test examples:', len(test_dataset_with_images)) # 2,886 images
 
 #endregion
 
 #region test input_ids, attention_masks and labels are transferrred correctly
-def test_input_ids_attention_mask_labels(dataset, original_df, num_samples=5):
+'''def test_input_ids_attention_mask_labels(dataset, original_df, num_samples=5):
     for i in range(min(num_samples, len(dataset))):
         sample = dataset[i]
         input_ids = sample['input_ids']
@@ -209,7 +275,7 @@ def test_input_ids_attention_mask_labels(dataset, original_df, num_samples=5):
 
 test_input_ids_attention_mask_labels(train_dataset_with_images, df_train_filtered)
 
-
+'''
 #endregion
 
 
@@ -237,7 +303,7 @@ class ProgressPrintCallback(TrainerCallback):
 bert_config = BertConfig.from_pretrained(pretrained_bert_path)
 print("Loaded vocab size from configuration:", bert_config.vocab_size)
 bert_config.add_cross_attention = True  # Enable cross-attention for decoder
-bert_config.vocab_size = 878 
+bert_config.vocab_size = 124 
 print("Configured vocab size after manual change:", bert_config.vocab_size)
 swin_config = SwinConfig()
 
@@ -257,8 +323,8 @@ def  model_size(model):
 start_size = f'START SIZE:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M parameters\BERT size: {model_size(model.decoder)/1000**2:.1f}M parameters\nSwin+BERT size: {model_size(model)/1000**2:.1f}M parameters\n'
 print(start_size)
 #START SIZE:
-#Swin size: 27.5M parameters\BERT size: 119.2M parameters
-#Swin+BERT size: 146.7M parameters
+#Swin size: 27.5M parameters\BERT size: 114.5M parameters
+#Swin+BERT size: 142.0m parameters
 
 # Write the strings
 def build_text_files(data_list, dest_path):
@@ -281,28 +347,24 @@ model.decoder.resize_token_embeddings(len(vocab))
 
 print(f"Model config:\nPad token ID: {model.config.pad_token_id}\nBOS token ID: {model.config.decoder_start_token_id}\nEOS token ID: {model.config.eos_token_id}\nUnknown token ID: {model.config.unk_token_id}\nVocab size: {model.config.vocab_size}")
 #Model config:
-#Pad token ID: 0
-#BOS token ID: 2
-#EOS token ID: 34
-#Unknown token ID: 1
-#Vocab size: 6171
-
-for key, value in list(vocab.items())[:3]:
-    print(f"{key}: {value}")
+#Pad token ID: 123
+#BOS token ID: 120
+#EOS token ID: 121
+#Unknown token ID: 122
+#Vocab size: 124
 
 #endregion
 
 #region Beam search parameters
 model.config.early_stopping = True
-model.config.max_length = 134 # covers 80% of all observations in length
+model.config.max_length = 191 # covers 90% of all observations in length
 #model.config.no_repeat_ngram_size = 100
 model.config.length_penalty = 1.4
 model.config.num_beams = 4
-
-epochs = 20*1
+epochs = 40*1
 batch_size = 10
-eval_steps = np.round(len(df_train) / batch_size * epochs / 50, 0)
-logging_steps = eval_steps
+#eval_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)
+logging_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)  
 #endregion
 
 #region .safetensors file
@@ -332,9 +394,9 @@ def model_size(model):
 print(f'Start Size:\nSwin size: {model_size(model.encoder)/1000**2:.1f}M parameters\nBERT size: {model_size(model.decoder)/1000**2:.1f}M parameters\nSwin+BERT size: {model_size(model)/1000**2:.1f}M parameters')
 #Start Size:
 #Swin size: 27.5M parameters
-#BERT size: 119.2M parameters
-#Swin+BERT size: 146.7M parameters
-# -> Model size SMALLER - maybe because of smaller vocab?
+#BERT size: 114.5M parameters
+#Swin+BERT size: 142.0M parameters
+# Stilll the same
 #endregion
 
 
@@ -368,11 +430,11 @@ def decode_ids(ids, inv_vocab):
     # Return the decoded string
     return " ".join(decoded_tokens)
 
-
-for idx, ids in enumerate(df_train['input_ids'][:5]):
+'''
+for idx, ids in enumerate(df_train['input_ids'][-5:]):
     print(f"Row {idx + 1} Input IDs: {ids}")
     decoded = decode_ids(ids, inv_vocab)
-    print(f"Row {idx + 1} Decoded Output: {decoded}")
+    print(f"Row {idx + 1} Decoded Output: {decoded}")'''
 # Looks about right.
 
 def compute_metrics(pred):
@@ -405,9 +467,9 @@ def compute_metrics(pred):
 
 
 #region Testing evaluation metric
-test_ids = [0, 2, 3, 4] 
+test_ids = [0, 120, 121, 123] 
 decoded_str = decode_ids(test_ids, inv_vocab)
-
+#print(decoded_str)
 # Function itself works!
 
 #endregion
@@ -441,7 +503,8 @@ def verify_alignment(pred, inv_vocab, num_samples=5):
         print(f"  Predicted: {pred_str[i]}")
         print("-" * 40)
 
-
+#region MockPredictions
+'''
 class MockPrediction:
     def __init__(self, predictions, label_ids):
         """
@@ -455,13 +518,16 @@ class MockPrediction:
 mock_pred = MockPrediction(
     predictions=[[1, 4, 5, 2], [1, 6, 2, 0]],
     label_ids=[[1, 4, 5, 2], [1, 6, 5, -100]]
-)
 
 verify_alignment(mock_pred, inv_vocab, num_samples=2)
 print("Decoded from [0]:", decode_ids([0], inv_vocab))
 
 metrics = compute_metrics(mock_pred)
 print("Metrics:", metrics)
+    '''
+#endregion
+
+
 #endregion
 
 
@@ -478,40 +544,37 @@ torch.cuda.reset_peak_memory_stats()
 model.to(device)
 
 # Initialize wandb
-wandb.init(project="master_thesis_finetuning", name="no_unsure_tokens_run1")
+wandb.init(project="master_thesis_finetuning", name="yunus_data_run3_30epochs")
 
 # Update the model/num_parameters key with allow_val_change=True
 wandb.config.update({"model/num_parameters": model.num_parameters()}, allow_val_change=True) 
 
 # Training arguments
 training_args = Seq2SeqTrainingArguments(
-    predict_with_generate=True,
-    eval_strategy="steps",
-    eval_steps=500, 
-    num_train_epochs=epochs,  
-    per_device_train_batch_size=batch_size,
-    per_device_eval_batch_size=batch_size,
-    fp16=True,
-    save_steps=1000,  
-    output_dir=output_dir,  
-    logging_dir='./logs',
-    logging_steps=logging_steps,  
-    report_to="wandb",
-    save_total_limit=2,  # Keep last 2 saved models
-    load_best_model_at_end=True,  
-    metric_for_best_model="ter",  
-    greater_is_better=False, 
+    predict_with_generate=True,         # Enable generation during evaluation
+    evaluation_strategy="no",          # No evaluation during training
+    num_train_epochs=epochs,           # Set the number of epochs
+    per_device_train_batch_size=batch_size,  # Training batch size
+    per_device_eval_batch_size=batch_size,   # Evaluation batch size
+    fp16=True,                         # Use mixed precision for faster training
+    save_strategy="epoch",             # Save model at the end of each epoch
+    output_dir=output_dir,             # Output directory for saving models
+    logging_dir='./logs',              # Directory for logs
+    logging_steps=logging_steps,       # Log every few steps
+    report_to="wandb",                 # Log training progress to wandb
+    save_total_limit=1,                # Only keep the last saved model
 )
 
 # Load the datasets and define the trainer
+
 trainer = Seq2SeqTrainer(
     model=model,
     args=training_args,
-    train_dataset=train_dataset_with_images,
-    eval_dataset=val_dataset_with_images, 
-    data_collator=default_data_collator,
-    compute_metrics=compute_metrics,
-    callbacks=[ProgressPrintCallback()] 
+    train_dataset=train_dataset_with_images,  # Training dataset
+    eval_dataset=val_dataset_with_images,   # Testing dataset (used as eval)
+    data_collator=default_data_collator,     # Data collator for batching
+    compute_metrics=compute_metrics,         # Evaluate TER during testing
+    callbacks=[ProgressPrintCallback()],     # Progress callback
 )
 #endregion
 
@@ -520,12 +583,16 @@ trainer = Seq2SeqTrainer(
 trainer.train()
 
 # Run final evaluation
-final_results = trainer.evaluate(test_dataset_with_images)
+final_results = trainer.evaluate(val_dataset_with_images)
 print("Final Evaluation Results:", final_results)
 
 # Log final TER to wandb
-final_ter = final_results.get("eval_ter", "N/A")
-wandb.log({"Final Token Error Rate (TER)": final_ter})
+final_ter = final_results.get("eval_ter", None)  # Replace "eval_ter" with the key matching TER in final_results
+if final_ter is not None:
+    wandb.log({"Final Token Error Rate (TER)": final_ter})
+else:
+    print("TER could not be calculated. Check the evaluation results:", final_results)
+
 
 # Finish the wandb run
 wandb.finish()
@@ -537,7 +604,7 @@ wandb.finish()
 
 
 #region Loading trained model and test it using test dataset
-from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, AutoModelForSeq2SeqLM
+'''from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, AutoModelForSeq2SeqLM
 from datasets import Dataset
 import wandb
 
@@ -584,6 +651,6 @@ print("Test Evaluation Results:", test_results)
 wandb.init(project="master-thesis-evaluation", name="test-evaluation")
 final_ter = test_results.get("eval_ter", "N/A")
 wandb.log({"Test Token Error Rate (TER)": final_ter})
-wandb.finish()
+wandb.finish()'''
 
 #endregion

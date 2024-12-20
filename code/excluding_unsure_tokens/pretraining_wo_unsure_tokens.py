@@ -327,7 +327,7 @@ early_stopping_callback = EarlyStoppingCallback(
 
 #region BertLMHead continuing model training
 #### BERTLMHEAD
-'''
+
 import wandb
 from transformers import BertLMHeadModel, Trainer, TrainingArguments, BertTokenizer, BertConfig
 from transformers.integrations import WandbCallback
@@ -394,8 +394,10 @@ print("Test Loss: ", test_result_nx['eval_loss'])
 
 import math
 test_perplexity_nx = math.exp(test_result_nx['eval_loss'])
-print("Test Perplexity: ", test_perplexity_nx)'''
+print("Test Perplexity: ", test_perplexity_nx)
 #endregion
+
+
 
 #region NEW BertLMHead
 import wandb

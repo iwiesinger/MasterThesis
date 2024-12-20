@@ -3,7 +3,7 @@
 #region Read and get overview over raw data
 #JSON file path
 import json
-file_path = 'Akkadian.json'
+file_path = 'MasterThesis/data/Akkadian.json'
 
 import os
 os.getcwd()

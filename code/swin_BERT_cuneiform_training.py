@@ -379,7 +379,6 @@ def compute_metrics(pred):
         labels_ids = [np.where(np.array(seq) == -100, vocab['<PAD>'], seq).tolist() for seq in labels_ids]
     else:
         raise ValueError("labels_ids must be a list or NumPy array.")
-
     # Decode predictions and labels (convert arrays to lists if necessary)
     pred_str = [decode_ids(ids.tolist() if isinstance(ids, np.ndarray) else ids, inv_vocab) for ids in pred_ids]
     label_str = [decode_ids(ids.tolist() if isinstance(ids, np.ndarray) else ids, inv_vocab) for ids in labels_ids]
@@ -523,14 +522,66 @@ print("Final Evaluation Results:", final_results)
 final_ter = final_results.get("eval_ter", "N/A")
 wandb.log({"Final Token Error Rate (TER)": final_ter})
 
-
-
 # Finish the wandb run
 wandb.finish()
 #endregion
+
+
 #endregion
 
 
+
+#region Loading trained model and test it using test dataset
+from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, AutoModelForSeq2SeqLM
+from datasets import Dataset
+import wandb
+
+# Define paths
+checkpoint_dir = "/home/ubuntu/MasterThesis/finetuning_output/checkpoint-27020/"
+
+# Load the trained model
+model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint_dir)
+
+# Assuming your custom tokenizer was saved and loaded manually
+tokenizer = CustomTokenizer(vocab=vocab)  # Replace with your tokenizer class
+
+# Load the test dataset
+# Assuming `test_dataset_with_images` is preprocessed and tokenized already
+# Example: test_dataset_with_images = Dataset.from_dict({"input_ids": ..., "labels": ..., "attention_mask": ...})
+
+# Recreate the same training arguments (adjust `eval_dataset` only)
+eval_args = Seq2SeqTrainingArguments(
+    predict_with_generate=True,
+    per_device_eval_batch_size=8,  # Use your batch size here
+    fp16=True,  # Enable mixed-precision if supported
+    output_dir="./eval_logs",  # Set temporary logging directory for evaluation
+    logging_dir='./eval_logs',
+    report_to="wandb",  # Enable wandb logging
+    metric_for_best_model="ter",
+    greater_is_better=False
+)
+
+# Recreate the trainer with only `eval_dataset`
+trainer = Seq2SeqTrainer(
+    model=model,
+    args=eval_args,
+    eval_dataset=test_dataset_with_images,  # Use your test dataset here
+    tokenizer=tokenizer,  # Ensure custom tokenizer is passed
+    compute_metrics=compute_metrics,  # Use the same metrics function as training
+    data_collator=default_data_collator  # Use the same data collator as training
+)
+
+# Evaluate the model on the test dataset
+test_results = trainer.evaluate()
+print("Test Evaluation Results:", test_results)
+
+# Log results to wandb
+wandb.init(project="master-thesis-evaluation", name="test-evaluation")
+final_ter = test_results.get("eval_ter", "N/A")
+wandb.log({"Test Token Error Rate (TER)": final_ter})
+wandb.finish()
+
+#endregion
 
 
 
