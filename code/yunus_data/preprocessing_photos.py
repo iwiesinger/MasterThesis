@@ -2,12 +2,15 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+
 import os
 import json
 import pandas as pd
 
-train_data_path = 'code/yunus_data/df_train.json'
-val_data_path = 'code/yunus_data/df_val.json'
+train_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train.json'
+val_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val.json'
+train_img_path = '/home/ubuntu/MasterThesis/yunus_photos/train2017'
+val_img_path = '/home/ubuntu/MasterThesis/yunus_photos/val2017'
 
 with open(train_data_path, 'r') as f:
     train_img_data = pd.DataFrame(json.load(f))
@@ -25,7 +28,15 @@ bboxes_per_img = img_data_concat.set_index("img_name")["bbox"].to_dict()
 for key, value in list(bboxes_per_img.items())[:2]:
     print(f"{key}: {value}")
 
+bboxes_with_indices = {
+    img_name: {idx: bbox for idx, bbox in enumerate(bboxes, start=1)}
+    for img_name, bboxes in bboxes_per_img.items()
+}
+for key, value in list(bboxes_with_indices.items())[:2]:
+    print(f"{key}: {value}")
 
+
+#region OLD Image Processing
 def process_images_in_folder(folder_path, bounding_boxes=None):
     """
     Process all images in a folder to display tablet contours and existing bounding boxes.
@@ -82,10 +93,81 @@ def process_images_in_folder(folder_path, bounding_boxes=None):
         plt.imshow(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
         plt.axis('off')
         plt.show()
+#endregion
+
+#region NEW Image display with index of bounding box
+def process_images_in_folder(folder_path, bounding_boxes=None):
+    """
+    Display images with their bounding boxes and index numbers.
+
+    Args:
+        folder_path (str): Path to the folder containing images.
+        bounding_boxes (dict): Existing bounding boxes for images, where keys are image file names and values are lists of bounding boxes.
+    """
+    # List all files in the folder
+    for file_name in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file_name)
+
+        if not file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            continue
+
+        # Load the image
+        image = cv2.imread(file_path)
+
+        # Draw bounding boxes
+        display_image = image.copy()
+        if bounding_boxes and file_name in bounding_boxes:
+            for idx, bbox in enumerate(bounding_boxes[file_name], start=1):
+                x, y, w, h = bbox
+                cv2.rectangle(display_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                # Add index to the top-left corner of the bounding box
+                cv2.putText(display_image, str(idx), (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+        # Display the image with bounding boxes
+        plt.figure(figsize=(10, 10))
+        plt.title(f"Bounding Boxes for {file_name}")
+        plt.imshow(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
+        plt.axis('off')
+        plt.show()
+    """
+    Display images with their bounding boxes and index numbers.
+
+    Args:
+        folder_path (str): Path to the folder containing images.
+        bounding_boxes (dict): Existing bounding boxes for images, where keys are image file names and values are lists of bounding boxes.
+    """
+    # List all files in the folder
+    for file_name in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file_name)
+
+        if not file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            continue
+
+        # Load the image
+        image = cv2.imread(file_path)
+
+        # Draw bounding boxes
+        display_image = image.copy()
+        if bounding_boxes and file_name in bounding_boxes:
+            for idx, bbox in enumerate(bounding_boxes[file_name], start=1):
+                x, y, w, h = bbox
+                cv2.rectangle(display_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                # Add index to the top-left corner of the bounding box
+                cv2.putText(display_image, str(idx), (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+
+        # Display the image with bounding boxes
+        plt.figure(figsize=(10, 10))
+        plt.title(f"Bounding Boxes for {file_name}")
+        plt.imshow(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
+        plt.axis('off')
+        plt.show()
+#endregion
 
 # Example usage:
-# folder_path = "path_to_images_folder"
-# process_images_in_folder(folder_path)
+
+# Call the function with the folder path and bounding boxes
+process_images_in_folder(folder_path=val_img_path, bounding_boxes=bboxes_per_img)
+
 
 def process_images_in_folder_with_lines(folder_path):
     """
@@ -344,3 +426,4 @@ test_folder = "yunus_photos/train2017/"
 output_folder = "yunus_processed/train/"
 process_images_with_methods(test_folder, output_folder)
 
+#endregion
