@@ -589,6 +589,48 @@ print(stats_all_resized)
 
 ########## Reordering Bounding Boxes ##########
 
+#region KMeans Clustering to find 5 similar groups
+from sklearn.cluster import KMeans
+import pandas as pd
+import numpy as np
+
+def kmeans_group_images_by_height(bounding_boxes, num_clusters=5):
+    """
+    Group images into clusters based on the median height of bounding boxes using K-Means clustering.
+
+    Args:
+        bounding_boxes (dict): Dictionary where keys are image names and values are lists of bounding boxes [x, y, width, height].
+        num_clusters (int): Number of clusters to create (default is 5).
+
+    Returns:
+        pd.DataFrame: A DataFrame with image names, median heights, and their assigned cluster.
+    """
+    # Step 1: Compute median height per image
+    image_heights = []
+    for img_name, bboxes in bounding_boxes.items():
+        heights = [bbox[3] for bbox in bboxes]  # Extract heights
+        median_height = np.median(heights) if heights else 0  # Handle empty bounding boxes
+        image_heights.append({"image": img_name, "median_height": median_height})
+
+    # Convert to DataFrame
+    df = pd.DataFrame(image_heights)
+
+    # Step 2: Prepare data for clustering
+    X = df["median_height"].values.reshape(-1, 1)  # Reshape to 2D array for K-Means
+
+    # Step 3: Apply K-Means clustering
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)  # Fixed random state for reproducibility
+    df["cluster"] = kmeans.fit_predict(X)  # Assign clusters
+
+    return df, kmeans
+
+
+grouped_images, kmeans_model = kmeans_group_images_by_height(bboxes_per_img, num_clusters=10)
+print(grouped_images)
+
+#endregion
+
+
 #region Sort bounding boxes, experiment with different thresholds
 def sort_bounding_boxes_with_abz(bounding_boxes, abz_data, row_threshold=20):
     sorted_bboxes = {}
