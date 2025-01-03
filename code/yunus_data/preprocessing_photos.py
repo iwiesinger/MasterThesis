@@ -10,8 +10,8 @@ import json
 import pandas as pd
 import shutil
 
-train_data_path = 'code/yunus_data/df_train.json'
-val_data_path = 'code/yunus_data/df_val.json'
+train_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train.json'
+val_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val.json'
 train_img_path = 'yunus_photos/train2017/'
 val_img_path = 'yunus_photos/val2017/'
 
@@ -472,7 +472,7 @@ print("First value:", first_value)
 
 
 
-########## Resizing Images ##########
+########## Resizing and rotating Images ##########
 
 #region Resize images to having similar size based on having bounding boxes similar in height
 import os
@@ -532,8 +532,8 @@ def resize_image_and_boxes(image, bboxes, target_bbox_height, max_image_size=(10
     return padded_image, padded_bboxes
 
 # Paths and configurations
-input_folder = "cutted_images/"
-output_folder = "yunus_resized/"
+input_folder = "/home/ubuntu/MasterThesis/cutted_images"
+output_folder = "/home/ubuntu/MasterThesis/yunus_resized"
 target_bbox_height = 40  # Target median bounding box height
 os.makedirs(output_folder, exist_ok=True)
 
@@ -835,7 +835,7 @@ df_train_resized = create_new_dataset_with_sorted_abz(train_img_data, sorted_bbo
 df_val_resized = create_new_dataset_with_sorted_abz(val_img_data, sorted_bboxes_with_clusters, sorted_abz_with_clusters, image_sizes_dict)
 
 # Save the new dataset
-df_train_resized.to_json("code/yunus_data/df_train_resized.json", orient="records", indent=2)
+df_train_resized.to_json("/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json", orient="records", indent=2)
 df_val_resized.to_json("code/yunus_data/df_val_resized.json", orient="records", indent=2)
 
 print(df_train_resized.columns)
@@ -949,8 +949,9 @@ print(df_train_resized.columns)
 print(df_train_resized['category_id'].head(1))
 print(df_train_resized['abz'].head(1))
 
+
 # Save the new dataset
-df_train_resized.to_json("code/yunus_data/df_train_resized.json", orient="records", indent=2)
+df_train_resized.to_json("/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json", orient="records", indent=2)
 df_val_resized.to_json("code/yunus_data/df_val_resized.json", orient="records", indent=2)
 #endregion
 
@@ -1174,6 +1175,151 @@ apply_adaptive_mean_thresholding(input_val, output_val)
 
 
 
+
+#endregion
+
+
+########## Data Augmentation ##########
+
+
+
+
+#region Trying Rotation 
+import cv2
+import numpy as np
+import os
+
+def resize_and_rotate_image(image, rotation_angle, target_bbox_height, max_image_size=(1024, 1024), final_size=(1024, 1024)):
+    """
+    Resize an image based on bounding box height, apply rotation, and apply additional resizing and padding.
+
+    Args:
+        image (np.array): Input image.
+        rotation_angle (float): Rotation angle in degrees.
+        target_bbox_height (int): Target median bounding box height.
+        max_image_size (tuple): Maximum allowable image size (height, width).
+        final_size (tuple): Final quadratic size for padding.
+
+    Returns:
+        np.array: Final resized, rotated, and padded image.
+    """
+    # Step 1: Rotate the image
+    original_h, original_w = image.shape[:2]
+    center = (original_w // 2, original_h // 2)
+    rotation_matrix = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
+
+    # Compute new image dimensions after rotation
+    cos_theta = np.abs(rotation_matrix[0, 0])
+    sin_theta = np.abs(rotation_matrix[0, 1])
+    new_w = int(original_h * sin_theta + original_w * cos_theta)
+    new_h = int(original_h * cos_theta + original_w * sin_theta)
+
+    # Adjust rotation matrix for translation
+    rotation_matrix[0, 2] += (new_w / 2) - center[0]
+    rotation_matrix[1, 2] += (new_h / 2) - center[1]
+
+    # Rotate the image
+    rotated_image = cv2.warpAffine(image, rotation_matrix, (new_w, new_h))
+
+    # Step 2: Resize rotated image based on target bounding box height
+    scaling_factor = target_bbox_height / original_h  # Use original height as reference for scaling
+    resized_h, resized_w = int(new_h * scaling_factor), int(new_w * scaling_factor)
+    resized_image = cv2.resize(rotated_image, (resized_w, resized_h))
+
+    # Step 3: Ensure image does not exceed max_image_size
+    max_h, max_w = max_image_size
+    if resized_h > max_h or resized_w > max_w:
+        scaling_factor = min(max_w / resized_w, max_h / resized_h)
+        resized_h, resized_w = int(resized_h * scaling_factor), int(resized_w * scaling_factor)
+        resized_image = cv2.resize(resized_image, (resized_w, resized_h))
+
+    # Step 4: Pad image to final_size
+    final_h, final_w = final_size
+    pad_top = max((final_h - resized_h) // 2, 0)
+    pad_bottom = max(final_h - resized_h - pad_top, 0)
+    pad_left = max((final_w - resized_w) // 2, 0)
+    pad_right = max(final_w - resized_w - pad_left, 0)
+
+    padded_image = cv2.copyMakeBorder(resized_image, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+    return padded_image
+
+# Paths and configurations
+input_folder = "/home/ubuntu/MasterThesis/cutted_images/"
+output_folder = "/home/ubuntu/MasterThesis/yunus_augmented_rotation"
+target_bbox_height = 40  # Target median bounding box height
+rotation_angles = [-5, 5]  # Rotations in degrees
+os.makedirs(output_folder, exist_ok=True)
+
+# Process all images
+for img_name in os.listdir(input_folder):
+    input_path = os.path.join(input_folder, img_name)
+
+    if not os.path.isfile(input_path) or not img_name.endswith(".jpg"):
+        continue
+
+    image = cv2.imread(input_path)
+    if image is None:
+        print(f"Failed to load image: {input_path}")
+        continue
+
+    # Save the original resized and padded image
+    resized_image = resize_and_rotate_image(image, 0, target_bbox_height) 
+    cv2.imwrite(os.path.join(output_folder, img_name), resized_image)
+    print(f"Processed and saved original: {img_name}")
+
+    # Save rotated versions
+    for angle in rotation_angles:
+        rotated_image = resize_and_rotate_image(image, angle, target_bbox_height)
+        angle_str = f"{'+' if angle > 0 else ''}{angle:02d}"  # Format angle as +05 or -05
+        rotated_name = f"{img_name[:-4]}_{angle_str}.jpg"
+        cv2.imwrite(os.path.join(output_folder, rotated_name), rotated_image)
+        print(f"Processed and saved rotated: {rotated_name}")
+
+#endregion
+
+#region Adjusting dataframe
+# Opening the "old" datasets
+train_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json'
+val_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val_resized.json'
+
+with open(train_data_path, 'r') as f:
+    df_train_resized = pd.DataFrame(json.load(f))
+
+with open(val_data_path, 'r') as f:
+    df_val_resized = pd.DataFrame(json.load(f))
+
+print(df_val_resized.columns)
+print(df_train_resized.columns)
+
+# Creating new datasets with augmented data
+
+df_train_resized_plus_05 = df_train_resized.copy()
+df_train_resized_minus_5 = df_train_resized.copy()
+
+# Adjust image names for +5 and -5 rotations
+df_train_resized_plus_05['img_name'] = df_train_resized_plus_05['img_name'].str.replace(
+    r'(.jpg)$', r'_+05\1', regex=True
+)
+df_train_resized_minus_5['img_name'] = df_train_resized_minus_5['img_name'].str.replace(
+    r'(.jpg)$', r'_-5\1', regex=True
+)
+
+print(df_train_resized_minus_5['img_name'])
+print(df_train_resized_plus_05['img_name'].head())
+
+# Concatenate the original, +5, and -5 datasets
+df_train_aug_rot = pd.concat(
+    [df_train_resized, df_train_resized_plus_05, df_train_resized_minus_5],
+    ignore_index=True
+)
+
+save_path_df_train_aug_rot = "/home/ubuntu/MasterThesis/code/yunus_data/df_train_aug_rot.json"
+
+# Save the dataframe to a JSON file
+df_train_aug_rot.to_json(save_path_df_train_aug_rot, orient="records", lines=True)
+
+print(f"Dataframe saved successfully to {save_path_df_train_aug_rot}.")
 
 #endregion
 
