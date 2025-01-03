@@ -414,3 +414,51 @@ else:
 # All of them are there in the dataset, just as an unsure sign -> if we increase the dataset, it would appear and be recognized.
 
 #endregion
+
+
+
+######### Checking if more images can be used with yunus_data
+input_file = "/home/ubuntu/MasterThesis/no_pretty_match_list.txt"
+with open(input_file, "r") as file:
+    no_pretty_match_list = [line.strip() for line in file]
+
+no_pretty_match_list = [f"{item}.jpg" for item in no_pretty_match_list]
+print(no_match_list)
+
+# Keeping only images that match well with yunus data
+import os
+import shutil
+
+main_folder = "/home/ubuntu/MasterThesis/language_model_photos"
+sub_folder = os.path.join(main_folder, "data_like_yunus")
+os.makedirs(sub_folder, exist_ok=True)
+
+# Count initial number of images in the main folder
+initial_count = len([f for f in os.listdir(main_folder) if os.path.isfile(os.path.join(main_folder, f))])
+print(f"Initial number of images in the main folder: {initial_count}") # 19248 - later with lower threshold 18848
+
+# Move matching images to sub-folder
+for image_name in no_pretty_match_list:
+    source_path = os.path.join(main_folder, image_name)
+    target_path = os.path.join(sub_folder, image_name)
+    if os.path.exists(source_path):
+        shutil.move(source_path, target_path)
+
+# Count remaining number of images in main folder
+remaining_count = len([f for f in os.listdir(main_folder) if os.path.isfile(os.path.join(main_folder, f))])
+print(f"Remaining number of images in the main folder: {remaining_count}") # 18848 - later only 14918
+
+# delete all remaining images to save disk space <3 
+for file_name in os.listdir(main_folder):
+    file_path = os.path.join(main_folder, file_name)
+    # Check if it is a file (not a directory) before deleting
+    if os.path.isfile(file_path):
+        os.remove(file_path)
+
+# Final check: count if any are left - but there aren't :) 
+final_count = len([f for f in os.listdir(main_folder) if os.path.isfile(os.path.join(main_folder, f))])
+print(f"Final number of images in the main folder: {final_count}")
+
+
+
+

@@ -7,23 +7,29 @@
 #JSON file path
 import json
 import os
+import pandas as pd
+import torch
+from torch.utils.data import Dataset, DataLoader
+
 os.getcwd()
 
-train_path = '/home/ubuntu/instances_train2017.json'
-val_path = '/home/ubuntu/instances_val2017_orig.json'
+train_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json'
+val_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val_resized.json'
 
 with open(train_path, 'r') as f:
-    coco_recog_train = json.load(f)
+    train_raw = pd.DataFrame(json.load(f))
 
 with open(val_path, 'r') as f:
-    coco_recog_val = json.load(f)
+    val_raw = pd.DataFrame(json.load(f))
 
 
 # Length of the list
-train_length = len(coco_recog_train)
-val_length = len(coco_recog_val)
-print(f"Keys: {coco_recog_train.keys()}")
+train_length = len(train_raw)
+val_length = len(val_raw)
+print(f"Train length: {train_length}, Validation length: {val_length}")
+print(train_raw.columns)
 
+#region OLD - not necessary to map image_name or classes to annotations anymore
 # Add 'image_name' to annotations in coco_recog_train
 train_image_id_to_name = {image['id']: image['file_name'] for image in coco_recog_train['images']}
 for annotation in coco_recog_train['annotations']:
@@ -54,9 +60,9 @@ update_categories_with_abz(coco_recog_train, class_list)
 update_categories_with_abz(coco_recog_val, class_list)
 
 #endregion
+#endregion
 
-
-#region Split coco_recog_val into coco_recog_val (first 50 images) and coco_recog_test (last 50 images)
+#region OLD Split coco_recog_val into coco_recog_val (first 50 images) and coco_recog_test (last 50 images)
 
 '''
 random_seed = 42
@@ -115,10 +121,9 @@ print(f"Test dataset saved to {test_output_path}")
 
 #region Create Pretraining dataframe
 
-# Function to create a dataframe based on image and annotation data
-import pandas as pd
+#region OLD  Function to create a dataframe based on image and annotation data
 
-# Function to create a pretraining DataFrame
+#region OLD Function to create a pretraining DataFrame
 def create_pretraining_dataframe(coco_recog):
     # Create a mapping from category_id to ABZ notation
     category_mapping = {category["id"]: category.get("abz", None) for category in coco_recog["categories"]}
@@ -154,6 +159,7 @@ def create_pretraining_dataframe(coco_recog):
 
     # Create a DataFrame from the rows
     return pd.DataFrame(rows)
+#endregion
 
 # Example usage
 # For coco_recog_train
@@ -171,14 +177,22 @@ print(len(df_val))
 # For coco_recog_test
 #df_test = create_pretraining_dataframe(coco_recog_test)
 #print(df_test.head())
+#endregion
 
+pd.set_option('display.max_rows', None)       
+pd.set_option('display.max_columns', None)    
+pd.set_option('display.width', 1000)          
+pd.set_option('display.max_colwidth', None) 
 
-#region Create vocabulary
+print(train_raw['img_name'].head())
+print(train_raw.head(2))
+
+#region OLD Create vocabulary
 # Use categories as the vocabulary and inverse vocabulary
-def create_vocab_and_inverse(coco_recog):
+def create_vocab_and_inverse(df):
     # Create vocab and inverse vocab from categories
-    vocab = {category["abz"]: category["id"] for category in coco_recog["categories"]}
-    inv_vocab = {category["id"]: category["abz"] for category in coco_recog["categories"]}
+    vocab = {category["abz"]: category["id"] for category in df["categories"]}
+    inv_vocab = {category["id"]: category["abz"] for category in df["categories"]}
 
     # Add special tokens at the end
     max_id = max(vocab.values())
@@ -207,7 +221,15 @@ print(f"Vocabulary and inverse vocabulary saved at:\n{vocab_path}\n{inv_vocab_pa
 
 #endregion
 
+#region NEW: Open Vocabulary and Inv Vocabulary
+# Load vocab.json
+with open('/home/ubuntu/MasterThesis/code/yunus_data/vocab.json', "r") as vocab_file:
+    vocab = json.load(vocab_file)
 
+# Load inv_vocab.json
+with open('/home/ubuntu/MasterThesis/code/yunus_data/inv_vocab.json', "r") as inv_vocab_file:
+    inv_vocab = json.load(inv_vocab_file)
+#endregion
 
 
 # Modify DataFrame tokenization with special tokens
@@ -218,12 +240,12 @@ def tokenize_with_special_tokens(df, column_name="abz"):
     return df
 
 # Apply the tokenization with special tokens
-df_train = tokenize_with_special_tokens(df_train, column_name="abz")
-df_val = tokenize_with_special_tokens(df_val, column_name="abz")
+df_train = tokenize_with_special_tokens(train_raw, column_name="abz")
+df_val = tokenize_with_special_tokens(val_raw, column_name="abz")
 #df_test = tokenize_with_special_tokens(df_test, column_name="abz")
 
 # Inspect the updated DataFrame
-print(df_train[["abz", "tok_signs"]].head())
+print(df_train[["abz", "tok_signs"]].head(2))
 #endregion
 
 #endregion
@@ -245,21 +267,29 @@ def tokens_to_ids(tokens, vocab, max_len=512):
 
 # Create input IDs and attention masks for both datasets
 df_train['input_ids'], df_train['attention_mask'] = zip(*df_train['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
+df_train['input_ids'] = df_train['input_ids'].apply(list)  # Ensure input_ids is a list
+df_train['attention_mask'] = df_train['attention_mask'].apply(list)  # Ensure attention_mask is a list
+
 #df_test['input_ids'], df_test['attention_mask'] = zip(*df_test['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
 df_val['input_ids'], df_val['attention_mask'] = zip(*df_val['tok_signs'].apply(lambda x: tokens_to_ids(x, vocab)))
+df_val['input_ids'] = df_val['input_ids'].apply(list)  # Ensure input_ids is a list
+df_val['attention_mask'] = df_val['attention_mask'].apply(list) 
 
+print(type(df_train['input_ids']))
 
+# Define the tokens_to_labels function
 def tokens_to_labels(token_ids, pad_token_id=123):
     return [token_id if token_id != pad_token_id else -100 for token_id in token_ids]
 
-# Now apply the function to create the labels
+# Apply tokens_to_labels to the 'input_ids' column for df_train
 df_train["labels"] = df_train["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
-#df_test["labels"] = df_test["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
 df_val["labels"] = df_val["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
 
 print(len(df_train))
 print(len(df_val))
-
+print(df_train.head(2))
+print(df_train.columns)
+print(df_train[['input_ids', 'attention_mask', 'labels']].head(2))
 #endregion
 
 #region Saving training, validation and test dataset for finetuning
@@ -276,17 +306,14 @@ def save_to_json(df, folder_path, file_name):
 data_folder = '/home/ubuntu/MasterThesis/code/yunus_data/'
 
 # Save each dataset to the subfolder
-save_to_json(df_train, data_folder, 'df_train.json')
-save_to_json(df_val, data_folder, 'df_val.json')
+save_to_json(df_train, data_folder, 'df_train_resized.json')
+save_to_json(df_val, data_folder, 'df_val_resized.json')
 #save_to_json(df_test, data_folder, 'df_test.json')
 
 print(f"Datasets saved in the '{data_folder}' subfolder.")
 #endregion
 
 #region Create PyTorch Datasets and DataLoaders
-import torch
-from torch.utils.data import Dataset, DataLoader
-
 class TransliterationDataset(Dataset):
     def __init__(self, df):
         self.input_ids = torch.tensor(df['input_ids'].tolist())
@@ -442,7 +469,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Initialize Weights and Biases for a new training run in the master_thesis project
-wandb.init(project="master_thesis", name="seventh_try_15epochs_10batch")
+wandb.init(project="master_thesis", name="better_reordered_transliterations_try3_10batch")
 
 # Load the base pre-trained BERT model and its configuration
 config = BertConfig.from_pretrained('bert-base-uncased')
@@ -452,13 +479,13 @@ model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config, igno
 model.resize_token_embeddings(len(vocab))
 
 # Create a folder to save models during this run
-output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/seventh_try_15epochs_10batch/'
+output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/pretraining_after_better_reorder/'
 
 # Define the training arguments
 training_args = TrainingArguments(
     output_dir=output_dir,             # Output directory for saving models
     num_train_epochs=15,               # Train for 30 epochs
-    per_device_train_batch_size=20,    # Training batch size
+    per_device_train_batch_size=10,    # Training batch size
     warmup_steps=400,                  # Warmup steps for the learning rate scheduler
     weight_decay=0.001,                # Weight decay for regularization
     logging_dir='./logs',              # Directory for logs

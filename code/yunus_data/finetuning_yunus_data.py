@@ -26,13 +26,13 @@ from transformers import TrainerCallback
 #region General settings and directories
 Image.MAX_IMAGE_PIXELS = None
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-root_dir_train = '/home/ubuntu/MasterThesis/yunus_photos/train2017/'
-root_dir_val = '/home/ubuntu/MasterThesis/yunus_photos/val2017'
-pretrained_bert_path = '/home/ubuntu/MasterThesis/code/yunus_data/seventh_try_15epochs_10batch/checkpoint-420/'
-output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/3rd_finetune_output_30epochs/'
+root_dir_train = "/home/ubuntu/MasterThesis/yunus_processed/adaptive_mean_threshold/train/"
+root_dir_val =  "/home/ubuntu/MasterThesis/yunus_processed/adaptive_mean_threshold/val/"
+pretrained_bert_path = '/home/ubuntu/MasterThesis/code/yunus_data/pretraining_after_better_reorder/checkpoint-840/'
+output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/finetune_adapt_thresh_better_reordered'
 safetensors_file = pretrained_bert_path + "model.safetensors"
-train_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train.json'
-val_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val.json'
+train_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json'
+val_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_val_resized.json'
 #test_data_path = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/df_test.json'
 vocab_path = '/home/ubuntu/MasterThesis/code/yunus_data/vocab.json'
 inv_vocab_path = '/home/ubuntu/MasterThesis/code/yunus_data/inv_vocab.json'
@@ -80,7 +80,7 @@ print(df_train.head())
 
 #region #### Data Prep ####
 #region OLD Custom Class + Dataset Creation
-class TransliterationWithImageDataset(Dataset):
+'''class TransliterationWithImageDataset(Dataset):
     def __init__(self, root_dir, df, vocab, feature_extractor, max_seq_len=512, max_pixels=178956970):
         self.root_dir = root_dir
         self.vocab = vocab
@@ -157,7 +157,7 @@ class TransliterationWithImageDataset(Dataset):
                 'labels': labels,
                 'original_shape': original_shape,
                 'resized_shape': resized_shape
-            }
+            }'''
 #endregion
 
 #region NEW Custom Class + Dataset Creation
@@ -178,7 +178,7 @@ class TransliterationWithImageDataset(Dataset):
         image_path = os.path.join(self.root_dir, img_name)
 
         try:
-            image = Image.open(image_path).convert("RGB")
+                image = Image.open(image_path).convert("RGB")  
         except OSError:
             raise RuntimeError(f"Image at {image_path} could not be opened.")
 
@@ -200,6 +200,15 @@ class TransliterationWithImageDataset(Dataset):
             "labels": labels
         }
 
+
+
+# feature extractor
+feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224")
+
+#region Dataset Creation
+train_dataset_with_images = TransliterationWithImageDataset(root_dir=root_dir_train, df=df_train, vocab=vocab, feature_extractor=feature_extractor)
+val_dataset_with_images = TransliterationWithImageDataset(root_dir=root_dir_val, df=df_val, vocab=vocab, feature_extractor=feature_extractor)
+
 #endregion
 
 #region Creating image+text dataframes and dataloaders
@@ -219,13 +228,6 @@ class TransliterationWithImageDataset(Dataset):
         resized_pixel_count = resized_shape[0] * resized_shape[1]
         print(f"  Pixel count reduced to {resized_pixel_count / original_pixel_count * 100:.2f}% of original size\n")
 '''
-
-# feature extractor
-feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224")
-
-#region Dataset Creation
-train_dataset_with_images = TransliterationWithImageDataset(root_dir=root_dir_train, df=df_train, vocab=vocab, feature_extractor=feature_extractor)
-val_dataset_with_images = TransliterationWithImageDataset(root_dir=root_dir_val, df=df_val, vocab=vocab, feature_extractor=feature_extractor)
 #endregion
 
 #region Hopefully OLD
@@ -361,7 +363,7 @@ model.config.max_length = 191 # covers 90% of all observations in length
 #model.config.no_repeat_ngram_size = 100
 model.config.length_penalty = 1.4
 model.config.num_beams = 4
-epochs = 40*1
+epochs = 20*1
 batch_size = 10
 #eval_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)
 logging_steps = np.round(len(df_train) / batch_size * epochs / 20, 0)  
@@ -544,7 +546,7 @@ torch.cuda.reset_peak_memory_stats()
 model.to(device)
 
 # Initialize wandb
-wandb.init(project="master_thesis_finetuning", name="yunus_data_run3_30epochs")
+wandb.init(project="master_thesis_finetuning", name="finetune3_after_better_reordering_adapt_thresh")
 
 # Update the model/num_parameters key with allow_val_change=True
 wandb.config.update({"model/num_parameters": model.num_parameters()}, allow_val_change=True) 
@@ -584,7 +586,7 @@ trainer.train()
 
 # Run final evaluation
 final_results = trainer.evaluate(val_dataset_with_images)
-print("Final Evaluation Results:", final_results)
+
 
 # Log final TER to wandb
 final_ter = final_results.get("eval_ter", None)  # Replace "eval_ter" with the key matching TER in final_results
