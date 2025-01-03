@@ -378,7 +378,8 @@ def summarize_bounding_boxes(bounding_boxes):
             "min_width": np.min(widths),
             "max_width": np.max(widths),
             "min_height": np.min(heights),
-            "max_height": np.max(heights)
+            "max_height": np.max(heights),
+            "heights": heights
 
         })
 
@@ -461,6 +462,12 @@ print(stats_all)
 # Median height is 116, with min value of 17 and max 2118. Std of height is 80.
 # Median width is 137, with min value of 13 and max 2445. Std of width is 106.
 
+# Get the first key and value
+first_key = next(iter(bboxes_per_img))
+first_value = bboxes_per_img[first_key]
+
+print("First key:", first_key)
+print("First value:", first_value)
 #endregion
 
 
@@ -570,6 +577,7 @@ print("Image sizes dictionary:", list(image_sizes_dict.items())[:2])
 
 stats_per_image_resized = summarize_bounding_boxes(adjusted_bboxes_dict)
 print(stats_per_image_resized.head(10))
+print(stats_per_image_resized[['median_height', 'num_bboxes', 'max_height', 'min_height', 'mean_height', 'std_height']].head(100))
 
 # bbox height varies between 17 and 58 for these 10 images. Median height is 40 for 8 images, 8.5 for 2 images. Std vary, but all are between 3.5 and7.2. 
 # bbox width varies between 10 and 143 for these 10 images. Median width varies between 37 and 54. Std vary between 11.5 and 20.
@@ -589,7 +597,139 @@ print(stats_all_resized)
 
 ########## Reordering Bounding Boxes ##########
 
+#region Coming up with five groups of equal images based on bounding boxes
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+
+def cluster_images_by_height(stats_df, num_clusters=5):
+    """
+    Cluster images into groups based on bounding box height statistics using K-Means.
+
+    Args:
+        stats_df (pd.DataFrame): DataFrame containing bounding box statistics per image.
+        num_clusters (int): Number of clusters to create (default is 5).
+
+    Returns:
+        pd.DataFrame: Updated DataFrame with cluster assignments.
+        KMeans: Trained K-Means model.
+    """
+    # Step 1: Select relevant height-related features
+    features = ["median_height", "mean_height", "min_height", "max_height", "num_bboxes"]
+    height_data = stats_df[features]
+
+    # Step 2: Normalize the data
+    scaler = StandardScaler()
+    height_data_normalized = scaler.fit_transform(height_data)
+
+    # Step 3: Apply K-Means clustering
+    kmeans = KMeans(n_clusters=num_clusters, random_state=555)
+    stats_df["cluster"] = kmeans.fit_predict(height_data_normalized)
+
+    return stats_df, kmeans
+
+# Example usage
+# Assuming `stats_per_image_resized` is the DataFrame with the bounding box statistics
+num_clusters = 3
+clustered_stats, kmeans_model = cluster_images_by_height(stats_per_image_resized, num_clusters=num_clusters)
+
+print(clustered_stats[['cluster', "median_height", "mean_height", "min_height", "max_height", "num_bboxes"]].head())
+cluster_mapping = clustered_stats.set_index("image")["cluster"].to_dict()
+
+# Augment the adjusted_bboxes_dict with cluster information
+def augment_bboxes_with_clusters(bboxes_dict, clustering_stats):
+    """
+    Augment the bounding boxes dictionary with cluster information.
+
+    Args:
+        bboxes_dict (dict): Original dictionary with image names as keys and bounding boxes as values.
+        clustering_stats (pd.DataFrame): DataFrame containing image names and their assigned clusters.
+
+    Returns:
+        dict: Augmented dictionary with cluster information.
+    """
+    # Create a mapping from image names to clusters
+    cluster_mapping = clustering_stats.set_index("image")["cluster"].to_dict()
+
+    # Augment the bounding boxes dictionary with cluster info
+    augmented_dict = {}
+    for img_name, bboxes in bboxes_dict.items():
+        cluster = cluster_mapping.get(img_name, -1)  # Default cluster to -1 if not found
+        augmented_dict[img_name] = {"bboxes": bboxes, "cluster": cluster}
+
+    return augmented_dict
+
+# Augment the dictionary
+adjusted_bboxes_dict_clusters = augment_bboxes_with_clusters(adjusted_bboxes_dict, clustered_stats)
+
+
+first_key = next(iter(adjusted_bboxes_dict_clusters))
+first_value = adjusted_bboxes_dict_clusters[first_key]
+
+print(f"First Key: {first_key}")
+print(f"First Value: {first_value}")
+#endregion
+
+
 #region Sort bounding boxes, experiment with different thresholds
+
+#NEW
+def sort_bounding_boxes_with_clusters(bounding_boxes_with_clusters, abz_data, cluster_thresholds):
+    """
+    Sort bounding boxes with cluster-specific row thresholds.
+
+    Args:
+        bounding_boxes_with_clusters (dict): Dictionary with image keys containing bounding boxes and cluster info.
+        abz_data (dict): Dictionary with image keys and corresponding abz data.
+        cluster_thresholds (dict): Mapping of clusters to row thresholds.
+
+    Returns:
+        dict, dict: Sorted bounding boxes and sorted abz data.
+    """
+    sorted_bboxes = {}
+    sorted_abz = {}
+
+    for img_name, data in bounding_boxes_with_clusters.items():
+        bboxes = data["bboxes"]
+        cluster = data["cluster"]
+
+        # Fetch the row threshold for the cluster
+        row_threshold = cluster_thresholds.get(cluster, 20)  # Default threshold if cluster not in map
+
+        # Pair bounding boxes with their corresponding abz values
+        paired = list(zip(bboxes, abz_data.get(img_name, [])))
+
+        # Sort by top (y-coordinate)
+        paired = sorted(paired, key=lambda item: item[0][1])  # Sort by bbox y-coordinate
+
+        # Group into rows
+        rows = []
+        current_row = [paired[0]]
+        for item in paired[1:]:
+            if abs(item[0][1] - current_row[-1][0][1]) <= row_threshold:
+                current_row.append(item)
+            else:
+                rows.append(current_row)
+                current_row = [item]
+        if current_row:
+            rows.append(current_row)
+
+        # Sort rows by left (x-coordinate)
+        sorted_rows = [sorted(row, key=lambda item: item[0][0]) for row in rows]
+
+        # Flatten and separate bbox and abz
+        sorted_paired = [item for row in sorted_rows for item in row]
+        sorted_bboxes[img_name] = [item[0] for item in sorted_paired]
+        sorted_abz[img_name] = [item[1] for item in sorted_paired]
+
+    return sorted_bboxes, sorted_abz
+
+cluster_thresholds = {0: 12, 1: 9, 2: 5}  # Example thresholds for 5 clusters
+
+sorted_bboxes_with_clusters, sorted_abz_with_clusters = sort_bounding_boxes_with_clusters(
+    adjusted_bboxes_dict_clusters, abz_dict, cluster_thresholds
+)
+
 def sort_bounding_boxes_with_abz(bounding_boxes, abz_data, row_threshold=20):
     sorted_bboxes = {}
     sorted_abz = {}
@@ -624,6 +764,7 @@ def sort_bounding_boxes_with_abz(bounding_boxes, abz_data, row_threshold=20):
     return sorted_bboxes, sorted_abz
 
 sorted_bboxes, sorted_abz = sort_bounding_boxes_with_abz(adjusted_bboxes_dict,abz_dict, row_threshold=8)
+process_images_in_folder('/Users/irina/PythonProjects/MasterThesis/yunus_resized/val', sorted_bboxes_with_clusters)
 
 process_and_save_images_with_abz("thesis_photos/resized", sorted_bboxes, sorted_abz, "thesis_photos/bboxes_ordered/1024x1024/abz")
 process_and_save_images("thesis_photos/resized", sorted_bboxes, "thesis_photos/bboxes_ordered/1024x1024/index")
@@ -690,8 +831,8 @@ with open(val_data_path, 'r') as f:
     val_img_data = pd.DataFrame(json.load(f))
 
 
-df_train_resized = create_new_dataset_with_sorted_abz(train_img_data, adjusted_bboxes_dict, sorted_abz, image_sizes_dict)
-df_val_resized = create_new_dataset_with_sorted_abz(val_img_data, adjusted_bboxes_dict, sorted_abz, image_sizes_dict)
+df_train_resized = create_new_dataset_with_sorted_abz(train_img_data, sorted_bboxes_with_clusters, sorted_abz_with_clusters, image_sizes_dict)
+df_val_resized = create_new_dataset_with_sorted_abz(val_img_data, sorted_bboxes_with_clusters, sorted_abz_with_clusters, image_sizes_dict)
 
 # Save the new dataset
 df_train_resized.to_json("code/yunus_data/df_train_resized.json", orient="records", indent=2)
@@ -791,70 +932,6 @@ print(stats_all_ordered_val)
 ########## Saving in new Train and Validation set: Resized ##########
 
 #region create new dataset with resized images and bounding boxes
-import pandas as pd
-
-def create_new_dataset_with_sorted_abz(df, sorted_bboxes_dict, sorted_abz_dict, image_sizes_dict):
-    """
-    Create a new dataset with resized image dimensions, adjusted bounding boxes, and sorted abz.
-
-    Args:
-        df (pd.DataFrame): Original dataset containing image metadata.
-        sorted_bboxes_dict (dict): Dictionary with sorted bounding boxes per image.
-                                   Format: {image_name: [[x, y, w, h], ...]}.
-        sorted_abz_dict (dict): Dictionary with sorted abz values per image.
-                                Format: {image_name: [abz1, abz2, ...]}.
-        image_sizes_dict (dict): Dictionary with updated image dimensions per image.
-                                 Format: {image_name: (height, width)}.
-
-    Returns:
-        pd.DataFrame: New dataset with resized metadata and sorted abz.
-    """
-    new_rows = []
-
-    for _, row in df.iterrows():
-        img_name = row["img_name"]
-
-        # Fetch sorted bounding boxes and dimensions for this image
-        bboxes = sorted_bboxes_dict.get(img_name, [])
-        height, width = image_sizes_dict.get(img_name, (None, None))
-
-        # Fetch sorted abz values for this image
-        abz_values = sorted_abz_dict.get(img_name, [])
-
-        # Ensure bbox and abz are aligned
-        if len(bboxes) != len(abz_values):
-            print(f"Warning: Mismatch in bbox and abz for {img_name}. Skipping.")
-            continue
-
-        # Calculate areas for the bounding boxes
-        areas = [bbox[2] * bbox[3] for bbox in bboxes]  # width * height
-
-        # Create a new row with updated data
-        new_row = {
-            "img_name": img_name,
-            "height": height,
-            "width": width,
-            "bbox": bboxes,
-            "area": areas,
-            "category_id": row["category_id"],  # Keep original
-            "abz": abz_values,  # Updated to sorted abz
-        }
-        new_rows.append(new_row)
-
-    # Create a new DataFrame with the updated data
-    return pd.DataFrame(new_rows)
-
-# Opening the "old" datasets
-with open(train_data_path, 'r') as f:
-    train_img_data = pd.DataFrame(json.load(f))
-
-with open(val_data_path, 'r') as f:
-    val_img_data = pd.DataFrame(json.load(f))
-
-
-df_train_resized = create_new_dataset_with_sorted_abz(train_img_data, adjusted_bboxes_dict, sorted_abz, image_sizes_dict)
-df_val_resized = create_new_dataset_with_sorted_abz(val_img_data, adjusted_bboxes_dict, sorted_abz, image_sizes_dict)
-print(df_val_resized['abz'].head())
 
 # Loading in classes (from classes.txt file)
 categories = ['ABZ13', 'ABZ579', 'ABZ480', 'ABZ70', 'ABZ597', 'ABZ342', 'ABZ461', 'ABZ381', 'ABZ61', 'ABZ1', 'ABZ142', 'ABZ318', 'ABZ231', 'ABZ75', 'ABZ449', 'ABZ533', 'ABZ354', 'ABZ139', 'ABZ545', 'ABZ536', 'ABZ330', 'ABZ308', 'ABZ86', 'ABZ328', 'ABZ214', 'ABZ73', 'ABZ15', 'ABZ295', 'ABZ296', 'ABZ68', 'ABZ55', 'ABZ69', 'ABZ537', 'ABZ371', 'ABZ5', 'ABZ151', 'ABZ411', 'ABZ457', 'ABZ335', 'ABZ366', 'ABZ324', 'ABZ396', 'ABZ206', 'ABZ99', 'ABZ84', 'ABZ353', 'ABZ532', 'ABZ58', 'ABZ384', 'ABZ376', 'ABZ59', 'ABZ334', 'ABZ74', 'ABZ383', 'ABZ589', 'ABZ144', 'ABZ586', 'ABZ7', 'ABZ97', 'ABZ211', 'ABZ399', 'ABZ52', 'ABZ145', 'ABZ343', 'ABZ367', 'ABZ212', 'ABZ78', 'ABZ85', 'ABZ319', 'ABZ207', 'ABZ115', 'ABZ465', 'ABZ570', 'ABZ322', 'ABZ331', 'ABZ38', 'ABZ427', 'ABZ279', 'ABZ112', 'ABZ79', 'ABZ80', 'ABZ60', 'ABZ535', 'ABZ142a', 'ABZ314', 'ABZ232', 'ABZ554', 'ABZ312', 'ABZ172', 'ABZ128', 'ABZ6', 'ABZ595', 'ABZ230', 'ABZ167', 'ABZ12', 'ABZ306', 'ABZ331e+152i', 'ABZ339', 'ABZ134', 'ABZ575', 'ABZ401', 'ABZ313', 'ABZ472', 'ABZ441', 'ABZ62', 'ABZ111', 'ABZ468', 'ABZ148', 'ABZ397', 'ABZ104', 'ABZ147', 'ABZ455', 'ABZ471', 'ABZ412', 'ABZ2', 'ABZ440', 'ABZ101', 'ABZ538', 'ABZ72', 'ABZ298', 'ABZ143', 'ABZ437', 'ABZ393', 'ABZ483', 'ABZ94', 'ABZ559', 'ABZ565', 'ABZ87', 'ABZ138', 'ABZ50', 'ABZ191', 'ABZ152', 'ABZ124', 'ABZ205', 'ABZ398', 'ABZ9', 'ABZ126', 'ABZ164', 'ABZ195', 'ABZ307', 'ABZ598a']
@@ -986,10 +1063,119 @@ def process_images_with_methods(test_folder, output_folder):
 test_folder = "yunus_photos/train2017/"
 output_folder = "yunus_processed/train/"
 process_images_with_methods(test_folder, output_folder)
+#endregion
+
+#region trying adaptive Tresholding in three different ways
+# Define the load_image function
+def load_image(filepath, as_gray=True):
+    """Load an image from the specified filepath."""
+    if as_gray:
+        return cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
+    return cv2.imread(filepath, cv2.IMREAD_COLOR)
+
+
+def process_images_with_thresholding(test_folder, output_folder):
+    """
+    Process each image in the test folder with simple, adaptive mean, and adaptive Gaussian thresholding.
+
+    Args:
+        test_folder (str): Path to the folder containing test images.
+        output_folder (str): Path to the folder where processed images will be saved.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Create subfolders for each thresholding method
+    methods = ["simple", "adaptive_mean", "adaptive_gaussian"]
+    for method in methods:
+        os.makedirs(os.path.join(output_folder, method), exist_ok=True)
+
+    # Process each image
+    for filename in os.listdir(test_folder):
+        filepath = os.path.join(test_folder, filename)
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+            # Load the image in grayscale
+            image = load_image(filepath, as_gray=True)
+
+            # Simple thresholding
+            _, simple_thresh = cv2.threshold(image, 127, 255, cv2.THRESH_BINARY)
+            simple_output_path = os.path.join(output_folder, "simple", filename)
+            cv2.imwrite(simple_output_path, simple_thresh)
+
+            # Adaptive mean thresholding
+            adaptive_mean_thresh = cv2.adaptiveThreshold(
+                image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            adaptive_mean_output_path = os.path.join(output_folder, "adaptive_mean", filename)
+            cv2.imwrite(adaptive_mean_output_path, adaptive_mean_thresh)
+
+            # Adaptive Gaussian thresholding
+            adaptive_gaussian_thresh = cv2.adaptiveThreshold(
+                image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            adaptive_gaussian_output_path = os.path.join(output_folder, "adaptive_gaussian", filename)
+            cv2.imwrite(adaptive_gaussian_output_path, adaptive_gaussian_thresh)
+
+            print(f"Processed {filename} with all thresholding techniques.")
+
+# Paths
+test_folder = '/Users/irina/PythonProjects/MasterThesis/thesis_photos/resized/'
+output_folder = '/Users/irina/PythonProjects/MasterThesis/thesis_photos/resized/'
+
+# Run the function
+process_images_with_thresholding(test_folder, output_folder)
 
 #endregion
 
+#region Applying adaptive mean thresholding to train and validation data
 
+import cv2
+import os
+
+def apply_adaptive_mean_thresholding(input_folder, output_folder):
+    """
+    Apply adaptive mean thresholding to all images in the input folder and save the results in the output folder.
+
+    Args:
+        input_folder (str): Path to the folder containing input images.
+        output_folder (str): Path to the folder where processed images will be saved.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    for filename in os.listdir(input_folder):
+        filepath = os.path.join(input_folder, filename)
+
+        if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+            # Load the image in grayscale
+            image = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
+
+            if image is None:
+                print(f"Failed to load image: {filepath}")
+                continue
+
+            # Apply adaptive mean thresholding
+            adaptive_mean_thresh = cv2.adaptiveThreshold(
+                image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+
+            # Save the processed image
+            output_path = os.path.join(output_folder, filename)
+            cv2.imwrite(output_path, adaptive_mean_thresh)
+            print(f"Processed and saved: {output_path}")
+
+# Paths
+input_train = "/Users/irina/PythonProjects/MasterThesis/yunus_resized/train/"
+output_train = "/Users/irina/PythonProjects/MasterThesis/yunus_processed/train/"
+input_val = "/Users/irina/PythonProjects/MasterThesis/yunus_resized/val/"
+output_val = "/Users/irina/PythonProjects/MasterThesis/yunus_processed/val/"
+
+# Run the function
+apply_adaptive_mean_thresholding(input_train, output_train)
+apply_adaptive_mean_thresholding(input_val, output_val)
+
+
+
+
+#endregion
 
 # Archive
 #region KMeans Clustering to find 5 similar groups
