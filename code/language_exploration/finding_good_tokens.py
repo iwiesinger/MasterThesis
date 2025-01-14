@@ -21,15 +21,12 @@ if os.path.exists(file_path) and os.access(file_path, os.R_OK):
 else:
     print("The file does not exist or is not readable.")
 
-# Length of the list
 list_length = len(raw_data)
 print(f"The raw data has {list_length} items.")
 
-# Types of elements
 element_types = set(type(item) for item in raw_data)
 print(f"The list contains items of types: {element_types}")
 
-# convert into dataframe
 import pandas as pd
 df_raw = pd.DataFrame(raw_data)
 #endregion
@@ -95,13 +92,9 @@ df_tok.reset_index(drop=True, inplace=True)
 #region How long are resulting rows?
 
 #region Statistics
-# Calculate basic statistics for the token counts
 df_tok['token_count'] = df_tok['tok_signs'].apply(len)
-
-# Get basic statistics like mean, median, percentiles, etc.
 token_count_stats = df_tok['token_count'].describe()
 
-# Display the statistics
 print(token_count_stats)
 '''
 count    21952.000000
@@ -129,20 +122,15 @@ def process_unsure_tokens(token_list):
     num_unsure = len(unsure_tokens)
     return contains_unsure, num_unsure
 
-# Apply the function to each row in 'tok_signs'
 df_tok['contains_unsure'], df_tok['num_unsure'] = zip(*df_tok['tok_signs'].apply(process_unsure_tokens))
 df_tok['tok_signs_length']
 
-# Show the updated DataFrame
 print(df_tok[['tok_signs', 'contains_unsure', 'num_unsure', 'tok_signs_length']].head(20))
 print(df_tok['tok_signs'][2])
 print(df_tok[['contains_unsure', 'num_unsure']].describe())
 print(df_tok['contains_unsure'].sum())
 
-# Group by 'num_unsure' to count the distribution
 num_unsure_distribution = df_tok['num_unsure'].value_counts().sort_index()
-
-# Print the distribution
 print("Distribution of 'num_unsure' (number of unsure tokens per row):")
 print(num_unsure_distribution)
 print(df_tok[['tok_signs', 'contains_unsure', 'num_unsure', 'tok_signs_length']])
@@ -209,29 +197,19 @@ import matplotlib.pyplot as plt
 
 # Create the token count column
 df_raw_nx['token_count'] = df_raw_nx['tok_signs'].apply(len)
-
-# Define the bins (ranges) for token counts, including the last bucket for >3500
 bins = [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, float('inf')]
-
-# Define the labels for each bucket, with the last being ">3500"
 labels = ['0-500', '500-1000', '1000-1500', '1500-2000', '2000-2500', '2500-3000', '3000-3500', '>3500']
-
-# Create the bucketed token counts with labels
 df_raw_nx['token_count_bucket'] = pd.cut(df_raw_nx['token_count'], bins=bins, labels=labels, right=False)
-
-# Get the frequency distribution of the buckets
 bucket_distribution = df_raw_nx['token_count_bucket'].value_counts().sort_index()
 
-# Plot the bar chart
+
 plt.figure(figsize=(10,8))
 ax = bucket_distribution.plot(kind='bar')
 
-# Add counts on top of each bar
 for p in ax.patches:
     ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-# Add labels and title
 plt.title('Token Count Ranges')
 plt.xlabel('Token Count Ranges')
 plt.ylabel('Frequency (Number of Rows) within the range')
@@ -246,26 +224,18 @@ plt.savefig('plots/tok_count_ranges_total.jpg')
 
 # Define the bins (ranges) for token counts between 0 and 500, in steps of 50
 bins_0_500 = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
-
-# Define the labels for each bucket
 labels_0_500 = ['<50', '50-100', '100-150', '150-200', '200-250', '250-300', '300-350', '350-400', '400-450', '450-500']
-
-# Create the bucketed token counts with labels for the range 0-500
 df_raw_nx['token_count_bucket_0_500'] = pd.cut(df_raw_nx['token_count'], bins=bins_0_500, labels=labels_0_500, right=False)
 
-# Get the frequency distribution of the buckets for the range 0-500
 bucket_distribution_0_500 = df_raw_nx['token_count_bucket_0_500'].value_counts().sort_index()
 
-# Plot the bar chart
 plt.figure(figsize=(10,8))
 ax = bucket_distribution_0_500.plot(kind='bar')
 
-# Add counts on top of each bar
 for p in ax.patches:
     ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-# Add labels and title
 plt.title('Distribution of Token Count Buckets (0-500)')
 plt.xlabel('Token Count Range')
 plt.ylabel('Frequency (Number of Rows)')
@@ -277,26 +247,18 @@ plt.savefig('plots/less500_tok_count_ranges.jpg')
 #region Less than 50 Zoom-In
 # Define the bins (ranges) for token counts less than 50, in steps of 10
 bins_under_50 = [0, 10, 20, 30, 40, 50]
-
-# Define the labels for each bucket under 50
 labels_under_50 = ['<10', '10-20', '20-30', '30-40', '40-50']
-
-# Create the bucketed token counts with labels for the range <50
 df_raw_nx['token_count_bucket_under_50'] = pd.cut(df_raw_nx['token_count'], bins=bins_under_50, labels=labels_under_50, right=False)
 
-# Get the frequency distribution of the buckets for the range <50
 bucket_distribution_under_50 = df_raw_nx['token_count_bucket_under_50'].value_counts().sort_index()
 
-# Plot the bar chart for the range <50
 plt.figure(figsize=(10,8))
 ax = bucket_distribution_under_50.plot(kind='bar')
 
-# Add counts on top of each bar
 for p in ax.patches:
     ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-# Add labels and title
 plt.title('Distribution of Token Count Buckets (<50)')
 plt.xlabel('Token Count Range')
 plt.ylabel('Frequency (Number of Rows)')
@@ -331,21 +293,16 @@ print(df_shuffled.head())
 
 # Updated train-validation-test split function
 def train_val_test_split(df):
-    # Define the split indices
     train_split = int(0.70 * len(df))
     val_split = int(0.85 * len(df))  # 75% + 15% = 90%
 
-    # Perform the splits
     df_train = df[:train_split]
     df_val = df[train_split:val_split]
     df_test = df[val_split:]
 
     return df_train, df_val, df_test
 
-# Apply the function
 df_train, df_val, df_test = train_val_test_split(df_shuffled)
-
-# Print the sizes for verification
 print(f"Train set size: {len(df_train)}")
 print(f"Validation set size: {len(df_val)}")
 print(f"Test set size: {len(df_test)}")
@@ -372,7 +329,6 @@ all_tokens = {}
 for name, dataframe in dataframes.items():
     all_tokens[f'all_tokens_{name}'] = aggregate_tokens(dataframe)
 
-# Display the aggregated tokens to verify
 for name, tokens in all_tokens.items():
     print(f"Token length for df_{name}:")
     print(len(tokens))
@@ -397,7 +353,7 @@ for name, tokens in all_tokens.items():
     unique_name = name.replace('all_tokens_', '')
     unique_token_counts[f'unique_tok_counts_{unique_name}'] = un_tok
 
-# Display the unique token count dataframes to verify
+
 for name, un_tok in unique_token_counts.items():
     print(f"\nUnique token counts for {name}:{len(un_tok['count'])}" )
 # Unique token counts for unique_tok_counts_train_nx:4926
@@ -745,17 +701,11 @@ def count_letters_digits(token):
 letter_digit_counts_all = {}
 
 for name, tokens in all_tokens.items():
-    # Calculate the letter and digit counts for each token
     token_counts = [(token, *count_letters_digits(token)) for token in tokens]
-
-    # Create a DataFrame with columns 'token', 'letters', 'digits'
     token_counts_all_df = pd.DataFrame(token_counts, columns=['token', 'letters', 'digits'])
-
-    # Use the appropriate key format for the dictionary
     l_d_count_all_name = name.replace('all_tokens_', 'l_d_count_all_')
     letter_digit_counts_all[l_d_count_all_name] = token_counts_all_df
 
-# Display the letter and digit counts DataFrames to verify
 for name, df in letter_digit_counts_all.items():
     print(f"\nLetter and digit counts for {name}:")
     print(df.head())
@@ -765,17 +715,11 @@ for name, df in letter_digit_counts_all.items():
 letter_digit_counts_unique = {}
 
 for name, token_counts_df in unique_token_counts.items():
-    # Calculate the letter and digit counts for each token
     token_counts_unique = [(token, *count_letters_digits(token)) for token in token_counts_df['token']]
-
-    # Create a DataFrame with columns 'token', 'letters', 'digits'
     token_counts_unique_df = pd.DataFrame(token_counts_unique, columns=['token', 'letters', 'digits'])
-
-    # Use the appropriate key format for the dictionary
     l_d_count_unique_name = name.replace('unique_tok_counts_', 'l_d_count_unique_')
     letter_digit_counts_unique[l_d_count_unique_name] = token_counts_unique_df
 
-# Display the letter and digit counts DataFrames to verify
 for name, df in letter_digit_counts_unique.items():
     print(f"\nLetter and digit counts for {name}:")
     print(df.head())
@@ -792,17 +736,11 @@ datasets_to_plot = ['l_d_count_unique_train_nx', 'l_d_count_unique_val_nx', 'l_d
 # Create the plot with 3 rows and 2 columns
 fig, axes = plt.subplots(3, 2, figsize=(18, 18))
 
-# Plot each DataFrame's letter and digit counts as bar charts
 for i, name in enumerate(datasets_to_plot):
     df = letter_digit_counts_unique[name]
-
-    # Count the frequency of letter counts
     letter_counts = df['letters'].value_counts().sort_index()
-
-    # Count the frequency of digit counts
     digit_counts = df['digits'].value_counts().sort_index()
 
-    # Plot letter counts
     ax_letters = axes[i, 0]
     letter_counts.plot(kind='bar', ax=ax_letters, color='blue')
     ax_letters.set_title(f'Letter Counts in {name}', fontsize=18)
@@ -810,7 +748,6 @@ for i, name in enumerate(datasets_to_plot):
     ax_letters.set_ylabel('Frequency', fontsize=16)
     ax_letters.tick_params(axis='both', which='major', labelsize=14)
 
-    # Plot digit counts
     ax_digits = axes[i, 1]
     digit_counts.plot(kind='bar', ax=ax_digits, color='green')
     ax_digits.set_title(f'Digit Counts in {name}', fontsize=18)
@@ -818,7 +755,6 @@ for i, name in enumerate(datasets_to_plot):
     ax_digits.set_ylabel('Frequency', fontsize=16)
     ax_digits.tick_params(axis='both', which='major', labelsize=14)
 
-# Adjust layout and show the plot
 plt.tight_layout()
 plt.savefig('plots/letter_digit_counts_unique-tokens')  # Correct line here
 plt.show()
@@ -830,20 +766,13 @@ import matplotlib.pyplot as plt
 # Datasets to be visualized
 datasets_to_plot = ['l_d_count_all_train_nx', 'l_d_count_all_val_nx', 'l_d_count_all_test_nx']
 
-# Create the plot with 3 rows and 2 columns
 fig, axes = plt.subplots(3, 2, figsize=(18, 18))
 
-# Plot each DataFrame's letter and digit counts as bar charts
 for i, name in enumerate(datasets_to_plot):
     df = letter_digit_counts_all[name]
-
-    # Count the frequency of letter counts
     letter_counts = df['letters'].value_counts().sort_index()
-
-    # Count the frequency of digit counts
     digit_counts = df['digits'].value_counts().sort_index()
 
-    # Plot letter counts
     ax_letters = axes[i, 0]
     letter_counts.plot(kind='bar', ax=ax_letters, color='blue')
     ax_letters.set_title(f'Letter Counts in {name}', fontsize=18)  
@@ -852,7 +781,6 @@ for i, name in enumerate(datasets_to_plot):
     ax_letters.ticklabel_format(style='plain', axis='y')
     ax_letters.tick_params(axis='both', which='major', labelsize=14) 
 
-    # Plot digit counts
     ax_digits = axes[i, 1]
     digit_counts.plot(kind='bar', ax=ax_digits, color='green')
     ax_digits.set_title(f'Digit Counts in {name}', fontsize=18)  
@@ -861,7 +789,6 @@ for i, name in enumerate(datasets_to_plot):
     ax_digits.ticklabel_format(style='plain', axis='y')
     ax_digits.tick_params(axis='both', which='major', labelsize=14) 
 
-# Adjust layout and show the plot
 plt.tight_layout()
 plt.savefig('letter_digit_counts_all-tokens.jpg')
 plt.show()
@@ -879,7 +806,6 @@ exclude_tokens = ['<NEWLINE>', '<BOS>', '<EOS>', 'X']
 filtered_data = unique_codes[~unique_codes['token'].isin(exclude_tokens)]
 top_20 = filtered_data.head(20)
 
-# Creating the figure and a subplot
 fig, ax = plt.subplots(figsize=(3.5,4))  
 ax.axis('tight')
 ax.axis('off')
@@ -902,7 +828,6 @@ count_frequencies_leq_five = count_frequencies[count_frequencies>5]
 print(count_frequencies.head())
 print(count_frequencies_no_ones.head())
 
-# Plotting the distribution of token counts higher than 2
 plt.figure(figsize=(24, 8))
 ax = count_frequencies_no_ones.plot(kind='bar')
 plt.title('Distribution of Token Counts (Frequency > 1)')

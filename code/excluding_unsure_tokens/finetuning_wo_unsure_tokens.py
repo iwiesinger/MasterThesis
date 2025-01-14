@@ -71,10 +71,9 @@ class TransliterationWithImageDataset(Dataset):
         self.feature_extractor = feature_extractor
         self.max_seq_len = max_seq_len
 
-        # Filter out rows where the corresponding image file doesn't exist, done once here
         self.df = df[df['_id'].apply(lambda x: os.path.exists(f"{self.root_dir}{x}.jpg"))].reset_index(drop=True)
 
-        # Cache for resized images
+        # cache
         self.image_cache = {}
 
         # Threshold dimensions for resizing
@@ -86,7 +85,6 @@ class TransliterationWithImageDataset(Dataset):
 
     def __getitem__(self, idx):
         while idx < len(self.df):
-            # Get image file and text data
             id = self.df['_id'][idx]
             image_path = f"{self.root_dir}{id}.jpg"
             
@@ -94,7 +92,6 @@ class TransliterationWithImageDataset(Dataset):
             if id in self.image_cache:
                 pixel_values, original_shape, resized_shape = self.image_cache[id]
             else:
-                # Load image
                 try:
                     image = Image.open(image_path).convert("RGB")
                 except OSError:
@@ -104,9 +101,9 @@ class TransliterationWithImageDataset(Dataset):
                 original_shape = image.size + (3,)  # Original width, height, channels
 
                 # Skip images smaller than the minimum size
-                if original_shape[0] < self.min_size[0] or original_shape[1] < self.min_size[1]:  # New: Skip small images
-                    idx += 1  # Move to the next index
-                    continue  # Skip to the next iteration
+                if original_shape[0] < self.min_size[0] or original_shape[1] < self.min_size[1]:  
+                    idx += 1 
+                    continue  
 
                 # Check dimensions against threshold
                 if original_shape[0] >= self.resize_threshold[0] and original_shape[1] >= self.resize_threshold[1]:
@@ -120,13 +117,11 @@ class TransliterationWithImageDataset(Dataset):
                     resized_image = image
                     resized_shape = original_shape
 
-                # Process image through feature extractor
                 pixel_values = self.feature_extractor(resized_image, return_tensors="pt").pixel_values.squeeze()
 
                 # Cache the processed image data
                 self.image_cache[id] = (pixel_values, original_shape, resized_shape)
 
-            # Get input_ids and attention_mask from the DataFrame
             input_ids = torch.tensor(self.df['input_ids'][idx])
             attention_mask = torch.tensor(self.df['attention_mask'][idx])
 
@@ -161,7 +156,6 @@ def test_image_resizing(dataset, num_samples=10):
         resized_pixel_count = resized_shape[0] * resized_shape[1]
         print(f"  Pixel count reduced to {resized_pixel_count / original_pixel_count * 100:.2f}% of original size\n")
 
-# feature extractor
 feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224")
 
 # Filter DataFrame for images that exist - before creating datasets
@@ -221,7 +215,6 @@ class ProgressPrintCallback(TrainerCallback):
         current_epoch = state.epoch
         ter = metrics.get("ter", "N/A")  # Get TER from metrics
 
-        # Log TER to wandb if it's a valid metric
         if ter != "N/A":
             wandb.log({"Token Error Rate (TER)": ter, "Step": current_step, "Epoch": current_epoch})
 
@@ -345,7 +338,7 @@ import wandb
 
 def decode_ids(ids, inv_vocab):
     """Decode a list of token IDs into a string using the inverse vocabulary and print debug information."""
-    # Ensure 'ids' is always iterable (e.g., convert a single int to a list)
+    # id should be iterable
     if isinstance(ids, int):
         ids = [ids]
     elif not isinstance(ids, (list, tuple)):
@@ -354,7 +347,7 @@ def decode_ids(ids, inv_vocab):
     # Print the raw input
     print(f"Raw Token IDs: {ids}")
 
-    # Decode each token ID
+    # decode
     decoded_tokens = []
     for token_id in ids:
         if token_id in inv_vocab:
@@ -365,7 +358,6 @@ def decode_ids(ids, inv_vocab):
     # Print the decoded tokens
     print(f"Decoded Tokens: {decoded_tokens}")
 
-    # Return the decoded string
     return " ".join(decoded_tokens)
 
 
@@ -386,11 +378,9 @@ def compute_metrics(pred):
         labels_ids = [np.where(np.array(seq) == -100, vocab['<PAD>'], seq).tolist() for seq in labels_ids]
     else:
         raise ValueError("labels_ids must be a list or NumPy array.")
-    # Decode predictions and labels (convert arrays to lists if necessary)
     pred_str = [decode_ids(ids.tolist() if isinstance(ids, np.ndarray) else ids, inv_vocab) for ids in pred_ids]
     label_str = [decode_ids(ids.tolist() if isinstance(ids, np.ndarray) else ids, inv_vocab) for ids in labels_ids]
 
-    # Calculate Token Error Rate (TER)
     try:
         metric = WordErrorRate()
         ter = metric(pred_str, label_str).item()
@@ -417,7 +407,6 @@ def verify_alignment(pred, inv_vocab, num_samples=5):
     labels_ids = pred.label_ids
     pred_ids = pred.predictions
 
-    # Ensure label_ids has the correct structure
     if not all(isinstance(seq, (list, np.ndarray)) for seq in labels_ids):
         raise ValueError("label_ids must be a list of sequences (list of lists). Found:", labels_ids)
 
@@ -425,13 +414,10 @@ def verify_alignment(pred, inv_vocab, num_samples=5):
     labels_ids = [list(np.where(np.array(seq) == -100, vocab['<PAD>'], seq)) for seq in labels_ids]
     print("Processed label_ids:", labels_ids)
 
-    # Decode predictions and labels
     pred_str = [decode_ids(ids, inv_vocab) for ids in pred_ids]
     label_str = [decode_ids(seq, inv_vocab) for seq in labels_ids]
 
-    # Compare samples
     for i in range(min(num_samples, len(label_str))):
-        # Skip sequences that decode to only <PAD>
         if label_str[i] == "<PAD>" and pred_str[i] == "<PAD>":
             print(f"Sample {i + 1}: Skipped (only padding)")
             continue
@@ -519,15 +505,11 @@ trainer = Seq2SeqTrainer(
 # Start training with wandb logging enabled
 trainer.train()
 
-# Run final evaluation
 final_results = trainer.evaluate(test_dataset_with_images)
 print("Final Evaluation Results:", final_results)
 
-# Log final TER to wandb
 final_ter = final_results.get("eval_ter", "N/A")
 wandb.log({"Final Token Error Rate (TER)": final_ter})
-
-# Finish the wandb run
 wandb.finish()
 #endregion
 
@@ -547,21 +529,15 @@ checkpoint_dir = "/home/ubuntu/MasterThesis/finetuning_output/checkpoint-27020/"
 # Load the trained model
 model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint_dir)
 
-# Assuming your custom tokenizer was saved and loaded manually
-tokenizer = CustomTokenizer(vocab=vocab)  # Replace with your tokenizer class
+tokenizer = CustomTokenizer(vocab=vocab)  
 
-# Load the test dataset
-# Assuming `test_dataset_with_images` is preprocessed and tokenized already
-# Example: test_dataset_with_images = Dataset.from_dict({"input_ids": ..., "labels": ..., "attention_mask": ...})
-
-# Recreate the same training arguments (adjust `eval_dataset` only)
 eval_args = Seq2SeqTrainingArguments(
     predict_with_generate=True,
-    per_device_eval_batch_size=8,  # Use your batch size here
-    fp16=True,  # Enable mixed-precision if supported
-    output_dir="./eval_logs",  # Set temporary logging directory for evaluation
+    per_device_eval_batch_size=8, 
+    fp16=True,  
+    output_dir="./eval_logs",  
     logging_dir='./eval_logs',
-    report_to="wandb",  # Enable wandb logging
+    report_to="wandb", 
     metric_for_best_model="ter",
     greater_is_better=False
 )
@@ -570,17 +546,16 @@ eval_args = Seq2SeqTrainingArguments(
 trainer = Seq2SeqTrainer(
     model=model,
     args=eval_args,
-    eval_dataset=test_dataset_with_images,  # Use your test dataset here
-    tokenizer=tokenizer,  # Ensure custom tokenizer is passed
-    compute_metrics=compute_metrics,  # Use the same metrics function as training
-    data_collator=default_data_collator  # Use the same data collator as training
+    eval_dataset=test_dataset_with_images, 
+    tokenizer=tokenizer,  
+    compute_metrics=compute_metrics, 
+    data_collator=default_data_collator  
 )
 
-# Evaluate the model on the test dataset
+
 test_results = trainer.evaluate()
 print("Test Evaluation Results:", test_results)
 
-# Log results to wandb
 wandb.init(project="master-thesis-evaluation", name="test-evaluation")
 final_ter = test_results.get("eval_ter", "N/A")
 wandb.log({"Test Token Error Rate (TER)": final_ter})

@@ -24,15 +24,12 @@ if os.path.exists(file_path) and os.access(file_path, os.R_OK):
 else:
     print("The file does not exist or is not readable.")
 
-# Length of the list
 list_length = len(raw_data)
 print(f"The raw data has {list_length} items.")
 
-# Types of elements
 element_types = set(type(item) for item in raw_data)
 print(f"The list contains items of types: {element_types}")
 
-# convert into dataframe
 import pandas as pd
 df_raw = pd.DataFrame(raw_data)
 #endregion
@@ -41,9 +38,9 @@ df_raw = pd.DataFrame(raw_data)
 
 # Filter out X and Newline
 def tokenize_signs_exc_x(signs):
-    signs = signs.replace('\n', ' <NEWLINE> ')  # Replace newline with special token
-    tokens = signs.split()  # Split signs by whitespace
-    tokens = ['<BOS>'] + [token for token in tokens if token not in ['X', '<NEWLINE>']] + ['<EOS>']  # Filter out 'X' and '<NEWLINE>'
+    signs = signs.replace('\n', ' <NEWLINE> ') 
+    tokens = signs.split()  
+    tokens = ['<BOS>'] + [token for token in tokens if token not in ['X', '<NEWLINE>']] + ['<EOS>'] 
     return tokens
 
 
@@ -91,7 +88,6 @@ empty_tok_signs = df_tok[df_tok['tok_signs'].apply(lambda tokens: len(tokens) ==
 print(empty_tok_signs)
 # none left :-) so all is tokenized nicely!
 
-# Reset index 
 df_tok.reset_index(drop=True, inplace=True)
 #endregion
 
@@ -147,18 +143,15 @@ print(df_shuffled.head())
 
 # Updated train-validation-test split function
 def train_val_test_split(df):
-    # Define the split indices
     train_split = int(0.70 * len(df))
     val_split = int(0.85 * len(df))  # 75% + 15% = 90%
 
-    # Perform the splits
     df_train = df[:train_split]
     df_val = df[train_split:val_split]
     df_test = df[val_split:]
 
     return df_train, df_val, df_test
 
-# Apply the function
 df_train, df_val, df_test = train_val_test_split(df_shuffled)
 
 # Print the sizes for verification
@@ -173,11 +166,9 @@ print(f"Test set size: {len(df_test)}")
 #region Create Vocabulary and inversed vocabulary
 from collections import Counter
 
-# Flatten the list of tokenized signs
 all_tokens = [token for sublist in df_shuffled['tok_signs'] for token in sublist]
 print(all_tokens[9])
 
-# Count the frequency of each token
 token_counts = Counter(all_tokens)
 
 # Create a vocabulary with token to index mapping
@@ -187,8 +178,6 @@ vocab['<PAD>'] = 0
 vocab['<UNK>'] = 1
 print(len(vocab))
 
-
-# Invert the vocabulary dictionary for decoding (if needed)
 inv_vocab = {idx: token for token, idx in vocab.items()}
 
 
@@ -239,15 +228,12 @@ df_val['labels'] = df_val['input_ids'].apply(lambda ids: tokens_to_labels(ids, p
 '''def save_to_json(df, folder_path, file_name):
     file_path = os.path.join(folder_path, file_name)
     print(file_path)
-    # Convert the DataFrame to a dictionary and save as JSON
     data = df.to_dict(orient='records')
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# Subfolder path
 data_folder = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/'
 
-# Save each dataset to the subfolder
 save_to_json(df_train, data_folder, 'df_train.json')
 save_to_json(df_val, data_folder, 'df_val.json')
 save_to_json(df_test, data_folder, 'df_test.json')
@@ -303,13 +289,11 @@ import math
 
 class PerplexityLoggingCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, **kwargs):
-        # Extract the metrics logged during evaluation
         metrics = kwargs.get("metrics", {})
         eval_loss = metrics.get("eval_loss")
 
         if eval_loss is not None:
             perplexity = math.exp(eval_loss)
-            # Log perplexity to wandb
             wandb.log({"epoch": state.epoch, "perplexity": perplexity})
             print(f"Epoch {state.epoch}: Perplexity = {perplexity}")
 #endregion
@@ -317,9 +301,8 @@ class PerplexityLoggingCallback(TrainerCallback):
 #region Early Stopping Callback
 from transformers import EarlyStoppingCallback
 
-# Add EarlyStoppingCallback with a tolerance of 5 epochs
 early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=5  # Number of epochs to wait for improvement
+    early_stopping_patience=5
 )
 #endregion
 
@@ -355,7 +338,7 @@ model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config)
 best_model_path = './results_2noNEWLINE/checkpoint-2564'  
 model = BertLMHeadModel.from_pretrained(best_model_path)
 
-# Define the training arguments
+
 training_args = TrainingArguments(
     output_dir='./results_2noNEWLINE',
     num_train_epochs=25,
@@ -371,7 +354,7 @@ training_args = TrainingArguments(
     load_best_model_at_end=True  
 )
 
-# Initialize the Trainer
+
 trainer_nx = Trainer(
     model=model,
     args=training_args,
@@ -380,15 +363,12 @@ trainer_nx = Trainer(
     callbacks=[WandbCallback(), PerplexityCallback()]  
 )
 
-# Update the Trainer with the best model
 trainer_nx.model = model
 
-# Train the model
 trainer_nx.train()
 trainer_nx.load_best_model_at_end = True
 
 
-# Evaluate the model on the test dataset
 test_result_nx = trainer_nx.evaluate(eval_dataset=test_dataset_nx)
 print("Test Loss: ", test_result_nx['eval_loss'])
 
@@ -396,7 +376,6 @@ import math
 test_perplexity_nx = math.exp(test_result_nx['eval_loss'])
 print("Test Perplexity: ", test_perplexity_nx)
 #endregion
-
 
 
 #region NEW BertLMHead
@@ -411,62 +390,55 @@ torch.cuda.memory_summary(device=None, abbreviated=False)
 torch.cuda.empty_cache()
 torch.cuda.is_available()
 
-# Check if GPU is available and set the device accordingly
+# gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Initialize Weights and Biases for a new training run in the master_thesis project
 wandb.init(project="master_thesis", name="pretrain_even_less_wd_higher_batch")
 
-# Load the base pre-trained BERT model and its configuration
 config = BertConfig.from_pretrained('bert-base-uncased')
 config.is_decoder = True
 config.vocab_size = len(vocab)
 model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config, ignore_mismatched_sizes=True)
 model.resize_token_embeddings(len(vocab))
 
-# Create a folder to save models during this run
 output_dir = '/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/even_less_wd_with_higherbatch/'
 
-# Define the training arguments
 training_args = TrainingArguments(
-    output_dir=output_dir,             # Output directory for saving models
-    num_train_epochs=30,               # Train for 20 epochs
-    per_device_train_batch_size=30,    # Increased batch size
-    per_device_eval_batch_size=30,     # Match evaluation batch size
-    warmup_steps=400,                  # Warmup steps for the learning rate scheduler
-    weight_decay=0.0001,                 # Weight decay for regularization
-    logging_dir='./logs',              # Directory for logs
-    logging_steps=500,                 # Log every 500 steps to monitor training
-    eval_steps=500,                    # Evaluate every 500 steps
-    eval_strategy="steps",            # Perform evaluation during training at set intervals
-    save_strategy="steps",            # Save models during training at set intervals
-    save_steps=500,                    # Save every 500 steps
-    save_total_limit=2,                # Keep the most recent and the best model
-    metric_for_best_model="eval_loss",# Monitor validation loss to decide the best model
-    greater_is_better=False,           # Lower validation loss is better
-    report_to="wandb",                # Log training progress to wandb
-    load_best_model_at_end=True,       # Load the best model at the end of training
-    fp16=True                          # Use mixed precision for faster training
+    output_dir=output_dir,             
+    num_train_epochs=30,               
+    per_device_train_batch_size=30,   
+    per_device_eval_batch_size=30,     
+    warmup_steps=400,                 
+    weight_decay=0.0001,                 
+    logging_dir='./logs',           
+    logging_steps=500,                
+    eval_steps=500,                  
+    eval_strategy="steps",            
+    save_strategy="steps",            
+    save_steps=500,                    
+    save_total_limit=2,               
+    metric_for_best_model="eval_loss",
+    greater_is_better=False,      
+    report_to="wandb",               
+    load_best_model_at_end=True,     
+    fp16=True                         
 )
 
 # Initialize the Trainer using train and test datasets (without validation dataset)
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=train_dataset,       # Train on the train dataset
-    eval_dataset=val_dataset,   # Evaluate on the validation dataset
+    train_dataset=train_dataset,     
+    eval_dataset=val_dataset,   
     callbacks=[
         WandbCallback(), 
         PerplexityLoggingCallback(), 
         early_stopping_callback]
 ) 
 
-
-# Train the model
 trainer.train()
 
-# Evaluate the model on the test dataset
 test_result = trainer.evaluate(eval_dataset=test_dataset)
 print("Test Loss: ", test_result['eval_loss'])
 
@@ -474,11 +446,9 @@ import math
 test_perplexity = math.exp(test_result['eval_loss'])
 print("Test Perplexity: ", test_perplexity)
 
-# Save the trained model to output_dir
 trainer.save_model(output_dir)
 print(f"Model saved to {output_dir}")
 
-# End wandb logging
 wandb.finish()
 #endregion
 
@@ -486,14 +456,11 @@ wandb.finish()
 '''from transformers import BertLMHeadModel, Trainer, TrainingArguments
 import math
 
-# Load the trained model from the checkpoint
 model_path = "/home/ubuntu/MasterThesis/results_pretrain_20241127_noval/checkpoint-8333/"
 model = BertLMHeadModel.from_pretrained(model_path)
 
-# Re-create the test dataset with the updated TransliterationDataset class
 test_dataset = TransliterationDataset(df_test) 
 
-# Define evaluation arguments
 training_args = TrainingArguments(
     output_dir=model_path,
     per_device_eval_batch_size=24,
@@ -501,18 +468,16 @@ training_args = TrainingArguments(
     report_to="none"  # Disable logging to wandb or other services during evaluation
 )
 
-# Initialize the Trainer with only evaluation dataset
 trainer = Trainer(
     model=model,
     args=training_args,
     eval_dataset=test_dataset
 )
 
-# Run evaluation on the test dataset
+
 test_result = trainer.evaluate()
 print("Test Loss: ", test_result['eval_loss'])
 
-# Calculate perplexity from the evaluation loss
 test_perplexity = math.exp(test_result['eval_loss'])
 print("Test Perplexity: ", test_perplexity)
 '''
