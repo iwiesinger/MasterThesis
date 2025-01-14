@@ -262,7 +262,7 @@ import pymongo
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from gridfs import GridFSBucket
-mongo_uri = "mongodb://wiesinger:xtz4bbBHnyDKeYT4uqEW@badwcai-ebl01.srv.mwn.de:27017,badwcai-ebl02.srv.mwn.de:27018,badwcai-ebl03.srv.mwn.de:27019/ebl?replicaSet=rs-ebl&authSource=ebl&authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true"
+mongo_uri = ' URI - Top Secret! '
 
 try:
     client = MongoClient(mongo_uri)
