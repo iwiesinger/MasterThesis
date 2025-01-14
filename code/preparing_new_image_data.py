@@ -20,24 +20,26 @@ def count_files_in_folder(folder_path):
     length = len(os.listdir(folder_path))
     return length
 
-files_in_img_folder = count_files_in_folder(image_folder)
+files_in_img_folder = count_files_in_folder(image_folder) # 4366
 print(f'{files_in_img_folder} images are in the bigger image folder')
 
 img_names_df = pd.DataFrame(img_names, columns=["img_name"])
 
 big_language_data_path = '/home/ubuntu/MasterThesis/code/big_language_data.json'
 with open(big_language_data_path, 'r') as f:
-    big_language_data = pd.DataFrame(json.load(f))
+    big_language_data = pd.DataFrame(json.load(f)) # 21 952 rows
+print(len(big_language_data))
 
 # Filter rows where _id matches image names
 filt_big_language_data = big_language_data[big_language_data["_id"].isin(img_names)]
+print(len(filt_big_language_data)) # 4366
 
 big_language_data['_id'] = big_language_data['_id'].str.strip()
 image_names_strip = [name.strip() for name in img_names]
 
 matches = big_language_data["_id"].isin(image_names_strip)
 matching_count = matches.sum()  # Count how many matches exist
-# All images have matching text files! 
+print(matching_count) # All images have matching text files! 
 
 matched_data = big_language_data.loc[matches, ["_id", "signs", 'tok_signs']]
 print(matched_data.head())
@@ -46,7 +48,7 @@ print(matched_data.head())
 def tokenize_signs(signs):
     signs = signs.replace('\n', ' <NEWLINE> ')  
     tokens = signs.split() 
-    tokens = ['<BOS>'] + [token for token in tokens if token not in '<NEWLINE>'] + ['<EOS>']  # Filter out 'X' and '<NEWLINE>'
+    tokens = ['<BOS>'] + [token for token in tokens if token not in '<NEWLINE>'] + ['<EOS>']  
     return tokens
 
 matched_data['tok_signs'] = matched_data['signs'].apply(tokenize_signs)
@@ -63,11 +65,13 @@ matched_data['X_percent'] = matched_data['tok_signs'].apply(lambda tokens: token
 
 print(matched_data[['signs_len', 'X_percent']])
 
-matched_less10 = matched_data[matched_data['X_percent'] < 10] # 2497
-matched_less15 = matched_data[matched_data['X_percent'] < 15] # 3047
-matched_less20 = matched_data[matched_data['X_percent'] < 20] # 3509
+matched_less10 = matched_data[matched_data['X_percent'] < 10] # 1590
+matched_less15 = matched_data[matched_data['X_percent'] < 15] # 2486
+matched_less20 = matched_data[matched_data['X_percent'] < 20] # 3077
 
 print(len(matched_less20))
+print(len(matched_less15))
+print(len(matched_less10))
 # I will choose matched_less15.
 print(matched_less15.head())
 matched_less15['img_name'] = matched_less15['_id'] + '.jpg'
@@ -130,7 +134,6 @@ df_new['attention_mask'] = df_new['attention_mask'].apply(list)
 def tokens_to_labels(token_ids, pad_token_id=123):
     return [token_id if token_id != pad_token_id else -100 for token_id in token_ids]
 
-# Apply tokens_to_labels to the 'input_ids' column for df_train
 df_new["labels"] = df_new["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
 df_train["labels"] = df_train["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
 df_test["labels"] = df_test["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
@@ -200,12 +203,11 @@ class PerplexityLoggingCallback(TrainerCallback):
 
         if eval_loss is not None:
             perplexity = math.exp(eval_loss)
-            # Log perplexity to wandb
             wandb.log({"epoch": state.epoch, "perplexity": perplexity})
             print(f"Epoch {state.epoch}: Perplexity = {perplexity}")
 #endregion
 
-# Add EarlyStoppingCallback with a tolerance of 5 epochs
+# earlystopping
 early_stopping_callback = EarlyStoppingCallback(
     early_stopping_patience=5  
 )
@@ -223,38 +225,34 @@ torch.cuda.memory_summary(device=None, abbreviated=False)
 torch.cuda.empty_cache()
 torch.cuda.is_available()
 
-# Check if GPU is available and set the device accordingly
+# gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Initialize Weights and Biases for a new training run in the master_thesis project
 wandb.init(project="master_thesis", name="additional_language_data_noval")
 
-# Load the base pre-trained BERT model and its configuration
+# load models
 config = BertConfig.from_pretrained('bert-base-uncased')
 config.is_decoder = True
 config.vocab_size = len(vocab)
 model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config, ignore_mismatched_sizes=True)
 model.resize_token_embeddings(len(vocab))
 
-# Create a folder to save models during this run
 output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/pretraining_new_language_data_noval/'
 
-# Define the training arguments
 
-# Define the training arguments
 training_args = TrainingArguments(
-    output_dir=output_dir,             # Output directory for saving models
-    num_train_epochs=15,               # Train for 30 epochs
-    per_device_train_batch_size=15,    # Training batch size
-    warmup_steps=400,                  # Warmup steps for the learning rate scheduler
-    weight_decay=0.001,                # Weight decay for regularization
-    logging_dir='./logs',              # Directory for logs
-    logging_steps=500,                 # Log every 500 steps to monitor training
-    save_strategy="epoch",             # Save the model at the end of each epoch
-    save_total_limit=1,                # Only keep the most recent model
-    report_to="wandb",                 # Log training progress to wandb
-    fp16=True                          # Use mixed precision for faster training
+    output_dir=output_dir,             
+    num_train_epochs=15,              
+    per_device_train_batch_size=15,    
+    warmup_steps=400,                 
+    weight_decay=0.001,               
+    logging_dir='./logs',             
+    logging_steps=500,                 
+    save_strategy="epoch",            
+    save_total_limit=1,                
+    report_to="wandb",                
+    fp16=True                         
 )
 
 # Initialize the Trainer using train and test datasets (without validation dataset)
@@ -268,10 +266,9 @@ trainer = Trainer(
 ) 
 
 
-# Train the model
+
 trainer.train()
 
-# Evaluate the model on the test dataset
 test_result = trainer.evaluate(eval_dataset=test_dataset)
 print("Test Loss: ", test_result['eval_loss'])
 
@@ -279,7 +276,6 @@ import math
 test_perplexity = math.exp(test_result['eval_loss'])
 print("Test Perplexity: ", test_perplexity)
 
-# Save the trained model to output_dir
 trainer.save_model(output_dir)
 print(f"Model saved to {output_dir}")
 
@@ -306,13 +302,10 @@ def filter_images_by_dataset(image_folder, df_new, output_folder, img_column='im
     Returns:
         None
     """
-    # Create the output folder if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
 
-    # Get the list of image names from the DataFrame
     image_names = df_new[img_column].tolist()
 
-    # Iterate through the image names and copy the matching files
     for img_name in image_names:
         src_path = os.path.join(image_folder, img_name)
         dest_path = os.path.join(output_folder, img_name)
@@ -325,7 +318,6 @@ def filter_images_by_dataset(image_folder, df_new, output_folder, img_column='im
     print(f"Filtered images have been copied to {output_folder}.")
 print(df_new.columns)
 
-# Replace the paths and DataFrame with your actual paths and data
 image_folder = "/home/ubuntu/MasterThesis/language_model_photos/data_like_yunus/"
 output_folder = "/home/ubuntu/MasterThesis/language_model_photos/new_photos"
 filter_images_by_dataset(image_folder, df_new, output_folder)
@@ -365,7 +357,6 @@ def overwrite_images(input_folder, replacement_folder):
         if filename in replacement_files:
             replacement_file_path = os.path.join(replacement_folder, filename)
             try:
-                # Overwrite the image in the input folder with the one from the replacement folder
                 copy2(replacement_file_path, input_file_path)
                 print(f"Overwritten: {filename}")
             except Exception as e:
@@ -373,11 +364,9 @@ def overwrite_images(input_folder, replacement_folder):
         else:
             print(f"No replacement found for: {filename}")
 
-# Define folder paths
 input_folder = "/home/ubuntu/MasterThesis/language_model_photos/new_photos"
 replacement_folder = "/home/ubuntu/MasterThesis/language_model_photos/data_like_yunus"
 
-# Run the function
 overwrite_images(input_folder, replacement_folder)
 
 from PIL import Image, ImageOps
@@ -421,7 +410,6 @@ resize_and_pad_images(input_folder)
 
 # Copy pasted the 1662 augmented yunus training images into the folder
 
-# Adjust the dataset
 df_aug_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train_aug_newrotation.json'
 
 with open(df_aug_path, 'r') as f:
@@ -432,11 +420,10 @@ print(df_new.columns)
 
 columns_to_keep = ['img_name', 'tok_signs', 'attention_mask', 'input_ids', 'labels']
 
-# Ensure both datasets only have the selected columns
+
 df_aug_trimmed = df_aug[columns_to_keep]
 df_new_trimmed = df_new[columns_to_keep]
 
-# Concatenate the two datasets along rows
 df_aug_new = pd.concat([df_aug_trimmed, df_new_trimmed], ignore_index=True)
 
 

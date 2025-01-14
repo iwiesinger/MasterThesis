@@ -21,15 +21,10 @@ if os.path.exists(file_path) and os.access(file_path, os.R_OK):
 else:
     print("The file does not exist or is not readable.")
 
-# Length of the list
 list_length = len(raw_data)
-print(f"The raw data has {list_length} items.")
-
-# Types of elements
 element_types = set(type(item) for item in raw_data)
 print(f"The list contains items of types: {element_types}")
 
-# convert into dataframe
 import pandas as pd
 df_raw = pd.DataFrame(raw_data)
 print(df_raw.head())
@@ -45,7 +40,6 @@ print(df_raw['script'].head())
 # Looking at period
 df_raw['period'] = df_raw['script'].apply(lambda x: x['period'])
 
-# Get the unique values of the 'period' column
 unique_periods = df_raw['period'].unique()
 unique_periods_list = unique_periods.tolist()
 print(unique_periods_list)
@@ -95,7 +89,7 @@ id_list = list(id_unique)
 def tokenize_signs_exc_x(signs):
     signs = signs.replace('\n', ' <NEWLINE> ')  # Replace newline with special token
     tokens = signs.split()  # Split signs by whitespace
-    tokens = ['<BOS>'] + [token for token in tokens if token not in ['X', '<NEWLINE>']] + ['<EOS>']  # Filter out 'X' and '<NEWLINE>'
+    tokens = ['<BOS>'] + [token for token in tokens if token not in ['X', '<NEWLINE>']] + ['<EOS>']  
     return tokens
 
 
@@ -124,6 +118,7 @@ print(len(df_raw_nx)) #21994 -> 10 rows completely uninformative without X
 
 # Reset the index if needed
 df_raw_nx.reset_index(drop=True, inplace=True)
+df_raw_nx.to_json('/home/ubuntu/MasterThesis/code/big_language_data.json', orient='records', indent=4)
 #endregion
 
 #region How long are resulting rows?
@@ -135,7 +130,6 @@ df_raw_nx['token_count'] = df_raw_nx['tok_signs'].apply(len)
 # Get basic statistics like mean, median, percentiles, etc.
 token_count_stats = df_raw_nx['token_count'].describe()
 
-# Display the statistics
 print(token_count_stats)
 #endregion
 
@@ -148,28 +142,25 @@ import matplotlib.pyplot as plt
 # Create the token count column
 df_raw_nx['token_count'] = df_raw_nx['tok_signs'].apply(len)
 
-# Define the bins (ranges) for token counts, including the last bucket for >3500
+#bins (ranges) for token counts, including the last bucket for >3500
 bins = [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, float('inf')]
 
-# Define the labels for each bucket, with the last being ">3500"
+# labels for each bucket, with the last being ">3500"
 labels = ['0-500', '500-1000', '1000-1500', '1500-2000', '2000-2500', '2500-3000', '3000-3500', '>3500']
 
-# Create the bucketed token counts with labels
 df_raw_nx['token_count_bucket'] = pd.cut(df_raw_nx['token_count'], bins=bins, labels=labels, right=False)
 
-# Get the frequency distribution of the buckets
+# frequency distribution of the buckets
 bucket_distribution = df_raw_nx['token_count_bucket'].value_counts().sort_index()
 
 # Plot the bar chart
 plt.figure(figsize=(10,8))
 ax = bucket_distribution.plot(kind='bar')
 
-# Add counts on top of each bar
 for p in ax.patches:
     ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-# Add labels and title
 plt.title('Token Count Ranges')
 plt.xlabel('Token Count Ranges')
 plt.ylabel('Frequency (Number of Rows) within the range')
@@ -182,28 +173,20 @@ plt.savefig('plots/tok_count_ranges_total.jpg')
 
 #region Less than 500 Zoom-In
 
-# Define the bins (ranges) for token counts between 0 and 500, in steps of 50
+
 bins_0_500 = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
-
-# Define the labels for each bucket
 labels_0_500 = ['<50', '50-100', '100-150', '150-200', '200-250', '250-300', '300-350', '350-400', '400-450', '450-500']
-
-# Create the bucketed token counts with labels for the range 0-500
 df_raw_nx['token_count_bucket_0_500'] = pd.cut(df_raw_nx['token_count'], bins=bins_0_500, labels=labels_0_500, right=False)
-
-# Get the frequency distribution of the buckets for the range 0-500
 bucket_distribution_0_500 = df_raw_nx['token_count_bucket_0_500'].value_counts().sort_index()
 
-# Plot the bar chart
+
 plt.figure(figsize=(10,8))
 ax = bucket_distribution_0_500.plot(kind='bar')
 
-# Add counts on top of each bar
 for p in ax.patches:
     ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-# Add labels and title
 plt.title('Distribution of Token Count Buckets (0-500)')
 plt.xlabel('Token Count Range')
 plt.ylabel('Frequency (Number of Rows)')
@@ -213,28 +196,18 @@ plt.savefig('plots/less500_tok_count_ranges.jpg')
 #endregion
 
 #region Less than 50 Zoom-In
-# Define the bins (ranges) for token counts less than 50, in steps of 10
 bins_under_50 = [0, 10, 20, 30, 40, 50]
-
-# Define the labels for each bucket under 50
 labels_under_50 = ['<10', '10-20', '20-30', '30-40', '40-50']
-
-# Create the bucketed token counts with labels for the range <50
 df_raw_nx['token_count_bucket_under_50'] = pd.cut(df_raw_nx['token_count'], bins=bins_under_50, labels=labels_under_50, right=False)
-
-# Get the frequency distribution of the buckets for the range <50
 bucket_distribution_under_50 = df_raw_nx['token_count_bucket_under_50'].value_counts().sort_index()
 
-# Plot the bar chart for the range <50
 plt.figure(figsize=(10,8))
 ax = bucket_distribution_under_50.plot(kind='bar')
 
-# Add counts on top of each bar
 for p in ax.patches:
     ax.annotate(str(p.get_height()), (p.get_x() + p.get_width() / 2., p.get_height()), 
                 ha='center', va='center', xytext=(0, 10), textcoords='offset points')
 
-# Add labels and title
 plt.title('Distribution of Token Count Buckets (<50)')
 plt.xlabel('Token Count Range')
 plt.ylabel('Frequency (Number of Rows)')
@@ -288,7 +261,6 @@ all_tokens = {}
 for name, dataframe in dataframes.items():
     all_tokens[f'all_tokens_{name}'] = aggregate_tokens(dataframe)
 
-# Display the aggregated tokens to verify
 for name, tokens in all_tokens.items():
     print(f"Token length for df_{name}:")
     print(len(tokens))
@@ -313,7 +285,6 @@ for name, tokens in all_tokens.items():
     unique_name = name.replace('all_tokens_', '')
     unique_token_counts[f'unique_tok_counts_{unique_name}'] = un_tok
 
-# Display the unique token count dataframes to verify
 for name, un_tok in unique_token_counts.items():
     print(f"\nUnique token counts for {name}:{len(un_tok['count'])}" )
 # Unique token counts for unique_tok_counts_train_nx:4926
@@ -345,7 +316,6 @@ for name, un_tok in unique_token_counts.items():
     sorted_un_tok = un_tok.sort_values(by='count', ascending=False).reset_index(drop = True)
     sorted_unique_token_counts[name] = sorted_un_tok
 
-# Display the sorted DataFrames to verify
 for name, sorted_un_tok in sorted_unique_token_counts.items():
     print(f"\nSorted unique token counts for {name}:")
     print(sorted_un_tok.head())
@@ -358,24 +328,18 @@ for name, sorted_un_tok in sorted_unique_token_counts.items():
     top_15 = sorted_un_tok.head(15)
     top_15_tables[name] = top_15
 
-# Display the top 15 tokens tables to verify
 for name, top_15 in top_15_tables.items():
     print(f"\nTop 15 tokens for {name}:")
     print(top_15)
 
-# region Plot Top 15
 import matplotlib.pyplot as plt
 
-# List of DataFrames to be included in the plot
 dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
 
-# Filter the top_15_tables for the DataFrames to be plotted
 top_15_tables_nx = {name: top_15_tables[name] for name in dfs_to_plot}
 
-# Create the plot
 fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
 
-# Plot each table
 for ax, (name, top_15) in zip(axes, top_15_tables_nx.items()):
     ax.axis('tight')
     ax.axis('off')
@@ -385,12 +349,10 @@ for ax, (name, top_15) in zip(axes, top_15_tables_nx.items()):
     table.scale(1.2, 1.2)
     ax.set_title(f'Top 15 Tokens in {name}', fontweight='bold')
 
-# Add border to each cell and separate columns
 for key, cell in table.get_celld().items():
     cell.set_edgecolor('black')
     cell.set_linewidth(1)
 
-# Adjust layout to have gaps between subplots
 fig.subplots_adjust(wspace=0.6)  
 plt.savefig('plots/top15')
 plt.show()
@@ -408,7 +370,6 @@ for name, sorted_un_tok in sorted_unique_token_counts.items():
     top_20 = sorted_un_tok.head(20)
     top_20_tables[name] = top_20
 
-# Display the top 20 tokens tables to verify
 for name, top_20 in top_20_tables.items():
     print(f"\nTop 20 tokens for {name}:")
     print(top_20)
@@ -416,173 +377,50 @@ for name, top_20 in top_20_tables.items():
 # region Plot Top 20
 # List of DataFrames to be included in the plot
 dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
-
-# Filter the top_20_tables for the DataFrames to be plotted
 top_20_tables_nx = {name: top_20_tables[name] for name in dfs_to_plot}
 
-# Create the plot
 fig, axes = plt.subplots(1, 3, figsize=(20, 7))
 
-# Plot each table
 for ax, (name, top_20) in zip(axes, top_20_tables_nx.items()):
     ax.axis('tight')
     ax.axis('off')
 
-    # Create the table with larger font size
     table = ax.table(cellText=top_20.values, colLabels=top_20.columns, cellLoc='center', loc='center')
     table.auto_set_font_size(False)
-    table.set_fontsize(12)  # Increase the font size for the table values
-    table.scale(1.5, 1.5)  # Scale the table to make it larger
+    table.set_fontsize(12)  
+    table.scale(1.5, 1.5) 
 
-    # Set larger title font size
-    ax.set_title(f'Top 20 Tokens in {name}', fontweight='bold', fontsize=12)  # Increase title font size
+    ax.set_title(f'Top 20 Tokens in {name}', fontweight='bold', fontsize=12) 
 
-    # Add border to each cell and separate columns
     for key, cell in table.get_celld().items():
         cell.set_edgecolor('black')
         cell.set_linewidth(1)
 
-# Adjust layout to have gaps between subplots
-fig.subplots_adjust(wspace=0.6)  # Adjust wspace to control the space between the tables
+fig.subplots_adjust(wspace=0.6)  
 plt.savefig('plots/top20.jpg')
 plt.show()
 # endregion
-#endregion
-
-#region Top 50 tokens 
-top_50_tables = {}
-
-for name, sorted_un_tok in sorted_unique_token_counts.items():
-    top_50 = sorted_un_tok.head(50)
-    top_50_tables[name] = top_50
-
-# Display the top 50 tokens tables to verify
-for name, top_50 in top_50_tables.items():
-    print(f"\nTop 50 tokens for {name}:")
-    print(top_50)
-
-# region Plot Top 50 with highlighted common tokens
-# List of DataFrames to be included in the plot
-dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
-
-# Define a light yellow color
-highlight_color = mcolors.to_rgba('lightyellow')
-
-# Get the set of common tokens in the top 50 tables
-common_tokens_50 = set.intersection(
-    *[set(top_50_tables[name].head(50)['token']) for name in dfs_to_plot]
-)
-
-# Filter the top_50_tables for the DataFrames to be plotted
-top_50_tables_nx = {name: top_50_tables[name] for name in dfs_to_plot}
-
-# Create the plot
-fig, axes = plt.subplots(1, 3, figsize=(15, 13.5))
-
-# Plot each table
-for ax, (name, top_50) in zip(axes, top_50_tables_nx.items()):
-    ax.axis('tight')
-    ax.axis('off')
-    table = ax.table(cellText=top_50.values, colLabels=top_50.columns, cellLoc='center', loc='center')
-    table.auto_set_font_size(False)
-    table.set_fontsize(8) 
-    table.scale(1.2,1.2)
-    ax.set_title(f'Top 50 Tokens in {name}', fontweight='bold')
-
-    # Highlight common tokens
-    for i, token in enumerate(top_50['token']):
-        if token in common_tokens_50:
-            table[(i + 1, 0)].set_facecolor(highlight_color)
-            table[(i + 1, 1)].set_facecolor(highlight_color)
-
-    # Add border to each cell and separate columns
-    for key, cell in table.get_celld().items():
-        cell.set_edgecolor('black')
-        cell.set_linewidth(1)
-
-# Adjust layout to have gaps between subplots
-fig.subplots_adjust(wspace=0.6)  
-plt.show()
-# endregion
-
-#region Top 50 tokens without colors
-top_50_tables = {}
-
-for name, sorted_un_tok in sorted_unique_token_counts.items():
-    top_50 = sorted_un_tok.head(50)
-    top_50_tables[name] = top_50
-
-# Display the top 50 tokens tables to verify
-for name, top_50 in top_50_tables.items():
-    print(f"\nTop 50 tokens for {name}:")
-    print(top_50)
-
-# region Plot Top 50 without highlighted common tokens
-import matplotlib.pyplot as plt
-
-# List of DataFrames to be included in the plot
-dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
-
-# Filter the top_50_tables for the DataFrames to be plotted
-top_50_tables_nx = {name: top_50_tables[name] for name in dfs_to_plot}
-
-# Create the plot
-fig, axes = plt.subplots(1, 3, figsize=(15, 13.5))
-
-# Plot each table
-for ax, (name, top_50) in zip(axes, top_50_tables_nx.items()):
-    ax.axis('tight')
-    ax.axis('off')
-    table = ax.table(cellText=top_50.values, colLabels=top_50.columns, cellLoc='center', loc='center')
-    table.auto_set_font_size(False)
-    table.set_fontsize(8)  
-    table.scale(1.2,1.2)
-    ax.set_title(f'Top 50 Tokens in {name}', fontweight='bold')
-
-    # Add border to each cell and separate columns
-    for key, cell in table.get_celld().items():
-        cell.set_edgecolor('black')
-        cell.set_linewidth(1)
-
-# Adjust layout to have gaps between subplots
-fig.subplots_adjust(wspace=0.7)  
-plt.savefig('plots/top50_no-col')
-plt.show()
-# endregion
-
-
-#endregion
 #endregion
 
 #region Plot unique tokens sorted by count: meq 5
 # List of DataFrames to be plotted: X included here!
 dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
 
-# Filter and sort the DataFrames for the bar chart: only those who appear at least 5 times
 filtered_sorted_counts_meq5 = {name: df[df['count'] >= 5] for name, df in sorted_unique_token_counts.items() if
                                 name in dfs_to_plot}
 
-# Create the plot with three rows
+
 fig, axes = plt.subplots(3, 1, figsize=(15, 15))
 
-# Plot each DataFrame as a bar chart
 for ax, (name, df) in zip(axes, filtered_sorted_counts_meq5.items()):
     ax.bar(df['token'], df['count'])
-
-    # Set the title with increased font size
     ax.set_title(f'Token Counts in {name}', fontweight='bold', fontsize=18)  
-
-    # Set the labels with increased font size
     ax.set_xlabel('Tokens', fontsize=16)  
     ax.set_ylabel('Count', fontsize=16) 
-
-    # Set tick parameters with increased font size
     ax.tick_params(axis='both', which='major', labelsize=14)
-
-    # Optionally, keep x-axis ticks hidden as before
     ax.set_xticks([])  
 
-# Adjust layout and show the plot
+
 plt.tight_layout()
 plt.savefig('plots/unique_tok_counts.jpg')
 plt.show()
@@ -591,22 +429,15 @@ plt.show()
 #region Plot count frequencies: How often do counts occur?
 # List of DataFrames to be plotted: X included here!
 dfs_to_plot = ['unique_tok_counts_train_nx', 'unique_tok_counts_val_nx', 'unique_tok_counts_test_nx']
-
-# Create the plot with three rows
 fig, axes = plt.subplots(3, 1, figsize=(15, 15))
 
-# Plot each DataFrame as a bar chart
 for ax, name in zip(axes, dfs_to_plot):
     token_counts_df = sorted_unique_token_counts[name]
 
-    # Count unique values in the 'count' column for each DataFrame and exclude frequencies that appear only once
     count_frequencies = token_counts_df['count'].value_counts().sort_index()
     filtered_count_frequencies = count_frequencies[count_frequencies > 1]
-
-    # Plot the bar chart
     filtered_count_frequencies.sort_values(ascending=False).plot(kind='bar', ax=ax)
 
-    # Set the title and labels
     ax.set_title(f'Frequency of Token Counts in {name}', fontweight='bold')
     ax.set_xlabel('Count')
     ax.set_ylabel('Frequency')
@@ -625,7 +456,6 @@ for ax, name in zip(axes, dfs_to_plot):
     # Adjust x-axis limit to add some padding on the left
     ax.set_xlim(left=filtered_count_frequencies.index.min() - 2.2)
 
-# Adjust layout and show the plot
 plt.tight_layout()
 plt.savefig('plots/counts_of_counts_m1.jpg')
 plt.show()
@@ -661,17 +491,11 @@ def count_letters_digits(token):
 letter_digit_counts_all = {}
 
 for name, tokens in all_tokens.items():
-    # Calculate the letter and digit counts for each token
     token_counts = [(token, *count_letters_digits(token)) for token in tokens]
-
-    # Create a DataFrame with columns 'token', 'letters', 'digits'
     token_counts_all_df = pd.DataFrame(token_counts, columns=['token', 'letters', 'digits'])
-
-    # Use the appropriate key format for the dictionary
     l_d_count_all_name = name.replace('all_tokens_', 'l_d_count_all_')
     letter_digit_counts_all[l_d_count_all_name] = token_counts_all_df
 
-# Display the letter and digit counts DataFrames to verify
 for name, df in letter_digit_counts_all.items():
     print(f"\nLetter and digit counts for {name}:")
     print(df.head())
@@ -708,17 +532,11 @@ datasets_to_plot = ['l_d_count_unique_train_nx', 'l_d_count_unique_val_nx', 'l_d
 # Create the plot with 3 rows and 2 columns
 fig, axes = plt.subplots(3, 2, figsize=(18, 18))
 
-# Plot each DataFrame's letter and digit counts as bar charts
 for i, name in enumerate(datasets_to_plot):
     df = letter_digit_counts_unique[name]
-
-    # Count the frequency of letter counts
     letter_counts = df['letters'].value_counts().sort_index()
-
-    # Count the frequency of digit counts
     digit_counts = df['digits'].value_counts().sort_index()
 
-    # Plot letter counts
     ax_letters = axes[i, 0]
     letter_counts.plot(kind='bar', ax=ax_letters, color='blue')
     ax_letters.set_title(f'Letter Counts in {name}', fontsize=18)
@@ -726,7 +544,6 @@ for i, name in enumerate(datasets_to_plot):
     ax_letters.set_ylabel('Frequency', fontsize=16)
     ax_letters.tick_params(axis='both', which='major', labelsize=14)
 
-    # Plot digit counts
     ax_digits = axes[i, 1]
     digit_counts.plot(kind='bar', ax=ax_digits, color='green')
     ax_digits.set_title(f'Digit Counts in {name}', fontsize=18)
@@ -734,9 +551,8 @@ for i, name in enumerate(datasets_to_plot):
     ax_digits.set_ylabel('Frequency', fontsize=16)
     ax_digits.tick_params(axis='both', which='major', labelsize=14)
 
-# Adjust layout and show the plot
 plt.tight_layout()
-plt.savefig('plots/letter_digit_counts_unique-tokens')  # Correct line here
+plt.savefig('plots/letter_digit_counts_unique-tokens')  
 plt.show()
 # endregion
 
@@ -753,13 +569,9 @@ fig, axes = plt.subplots(3, 2, figsize=(18, 18))
 for i, name in enumerate(datasets_to_plot):
     df = letter_digit_counts_all[name]
 
-    # Count the frequency of letter counts
     letter_counts = df['letters'].value_counts().sort_index()
-
-    # Count the frequency of digit counts
     digit_counts = df['digits'].value_counts().sort_index()
 
-    # Plot letter counts
     ax_letters = axes[i, 0]
     letter_counts.plot(kind='bar', ax=ax_letters, color='blue')
     ax_letters.set_title(f'Letter Counts in {name}', fontsize=18)  
@@ -795,7 +607,6 @@ exclude_tokens = ['<NEWLINE>', '<BOS>', '<EOS>', 'X']
 filtered_data = unique_codes[~unique_codes['token'].isin(exclude_tokens)]
 top_20 = filtered_data.head(20)
 
-# Creating the figure and a subplot
 fig, ax = plt.subplots(figsize=(3.5,4))  
 ax.axis('tight')
 ax.axis('off')
@@ -833,7 +644,6 @@ for p in ax.patches:
                 xytext=(0, 10),
                 textcoords='offset points')
 
-# Adjust y-axis limit to add some padding above the highest bar
 ax.set_ylim(0, max(count_frequencies_no_ones) * 1.1)
 ax.set_xlim(left=filtered_count_frequencies.index.min() - 2.5)
 
@@ -847,11 +657,10 @@ plt.show()
 #region Create Vocabulary and inversed vocabulary without X and NEWLINE
 from collections import Counter
 
-# Flatten the list of tokenized signs to create a vocabulary
+# flatten
 all_tokens_nx = [token for sublist in df_raw_nx['tok_signs'] for token in sublist]
 print(all_tokens_nx[9])
 
-# Count the frequency of each token
 token_counts_nx = Counter(all_tokens_nx)
 
 # Create a vocabulary with token to index mapping
@@ -998,15 +807,11 @@ trainer_nx = Trainer(
     callbacks=[WandbCallback(), PerplexityCallback()]  
 )
 
-# Update the Trainer with the best model
 trainer_nx.model = model
 
-# Train the model
 trainer_nx.train()
 trainer_nx.load_best_model_at_end = True
 
-
-# Evaluate the model on the test dataset
 test_result_nx = trainer_nx.evaluate(eval_dataset=test_dataset_nx)
 print("Test Loss: ", test_result_nx['eval_loss'])
 

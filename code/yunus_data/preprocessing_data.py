@@ -28,7 +28,7 @@ train_image_id_to_name = {image['id']: image['file_name'] for image in coco_reco
 for annotation in coco_recog_train['annotations']:
     annotation['image_name'] = train_image_id_to_name.get(annotation['image_id'], None)
 
-# Add 'image_name' to annotations in coco_recog_val
+# Add 'image_name' to coco_recog_val
 val_image_id_to_name = {image['id']: image['file_name'] for image in coco_recog_val['images']}
 for annotation in coco_recog_val['annotations']:
     annotation['image_name'] = val_image_id_to_name.get(annotation['image_id'], None)
@@ -42,11 +42,11 @@ for name in val_image_names:
 
 #region Split coco_recog_val into coco_recog_val (first 50 images) and coco_recog_test (last 50 images)
 
-# Split images
+# split images
 val_images = coco_recog_val['images'][:50]
 test_images = coco_recog_val['images'][50:]
 
-# Get the corresponding annotations for validation and test
+# get corresponding annotation
 val_image_ids = {image['id'] for image in val_images}
 test_image_ids = {image['id'] for image in test_images}
 print(f"Validation image ids: {val_image_ids},\n Test image ids: {test_image_ids}")
@@ -54,10 +54,9 @@ print(f"Validation image ids: {val_image_ids},\n Test image ids: {test_image_ids
 val_annotations = [annotation for annotation in coco_recog_val['annotations'] if annotation['image_id'] in val_image_ids]
 test_annotations = [annotation for annotation in coco_recog_val['annotations'] if annotation['image_id'] in test_image_ids]
 
-# Keep the categories as is for both
+# keep both categories
 categories = coco_recog_val['categories']
 
-# Create the validation and test datasets
 coco_recog_val_split = {
     'images': val_images,
     'annotations': val_annotations,
@@ -85,13 +84,12 @@ print(f"Test dataset saved to {test_output_path}")
 '''
 #endregion
 
-#region Combine coco_recog_train and coco_recog_val into coco_recog
+#region Combining dataset
 coco_recog = {
     'images': sorted(coco_recog_train['images'] + coco_recog_val['images'], key=lambda x: x['file_name']),
     'annotations': coco_recog_train['annotations'] + coco_recog_val['annotations'],
     'categories': coco_recog_train['categories']}
 
-# Print all file names from the coco_recog dataset
 print("File names in coco_recog:")
 for image in coco_recog['images']:
     print(image['file_name'])
@@ -100,30 +98,28 @@ print(len(coco_recog['annotations']))
 coco_recog['annotations'][0]
 coco_recog['annotations'][1]
 
-# Inspect the first 100 entries of coco_recog['annotations']
+# inspect
 print("First 100 entries of coco_recog['annotations']:")
 for annotation in coco_recog['annotations'][:400]:
     print(annotation)
 
 
 
-# Add the ABZ notation to the categories
-# Path to the classes.txt file
+# add abz notation
 classes_path = '/home/ubuntu/MasterThesis/code/yunus_data/classes.txt'
 
-# Read and parse the classes.txt file
+# using class file
 with open(classes_path, 'r') as file:
-    class_list = eval(file.read())  # Convert the string representation into a Python list
+    class_list = eval(file.read()) 
 
 # Add the 'abz' key to each category in 'categories'
 for category in coco_recog['categories']:
     category_id = category['id']
     if 0 <= category_id < len(class_list):
         category['abz'] = class_list[category_id]
-    else:
-        category['abz'] = None  # Handle cases where id is out of range
 
-# Verify the updated categories
+
+# verify
 print("Updated categories with 'abz':")
 for category in coco_recog['categories']:
     print(category)
@@ -132,12 +128,11 @@ for category in coco_recog['categories']:
 #endregion
 
 #region Extract file names and check how many sub-images there are
-# Extract and print unique last two characters before '.jpg' in file names
 unique_suffixes = set()
 for image in coco_recog['images']:
     file_name = image['file_name']
     if file_name.endswith('.jpg'):
-        suffix = file_name[-6:-4]  # Extract the last two characters before '.jpg'
+        suffix = file_name[-6:-4]  
         unique_suffixes.add(suffix)
 
 print("Unique last two characters before '.jpg':")
@@ -151,25 +146,25 @@ for suffix in sorted(unique_suffixes):
 #region Create dictionary of how many annotations there are per sub-picture and whole picture
 # Create a dictionary to store the counts of annotations per image_name and order by base_name
 def count_annotations_by_base_name(coco_recog):
-    # Initialize an empty dictionary to hold counts for each image_name
+    # initialize empty
     annotation_counts = {}
 
-    # Iterate through the annotations in coco_recog
+    # iterate through coco_reg
     for annotation in coco_recog['annotations']:
-        # Get the image_name for the current annotation
+        # get img name
         image_name = annotation['image_name']
 
-        # Increment the count for this image_name in the dictionary
+        # count
         if image_name in annotation_counts:
             annotation_counts[image_name] += 1
         else:
             annotation_counts[image_name] = 1
 
-    # Order the dictionary by base_name and group annotations by base_name
+    # order by base_name and group annotations by base_name
     grouped_annotations = {}
 
     for image_name, count in annotation_counts.items():
-        # Extract the base name from the image_name
+        # Extract  base name from the image_name
         if '-' in image_name:
             base_name = image_name.split('-')[0]
         else:
@@ -183,7 +178,7 @@ def count_annotations_by_base_name(coco_recog):
 
     return grouped_annotations
 
-# Create a new dictionary outside the function to sum counts by base name
+# new dictionary outside the function to sum counts by base name
 def calculate_base_img_annotation_counts(grouped_annotations):
     base_img_annotation_counts = {}
 
@@ -243,7 +238,9 @@ else:
 
 #endregion
 
-
+# I wanted to check if the transliterations could be created based on the big_dataset, as this one may contain the whole images 
+# (that yunus_data contained the sub-images from)
+# I applied a heuristic to see if it could work
 # Unfortunately, this was a dead end. :()
 
 
@@ -287,7 +284,3 @@ for image in val_images:
 #endregion
 
 
-#region Trying to get the transliterations
-
-
-#region 

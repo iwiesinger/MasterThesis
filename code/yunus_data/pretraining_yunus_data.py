@@ -22,7 +22,6 @@ with open(train_path, 'r') as f:
 with open(val_path, 'r') as f:
     val_raw = pd.DataFrame(json.load(f))
 
-
 # Length of the list
 train_length = len(train_raw)
 val_length = len(val_raw)
@@ -121,32 +120,30 @@ print(f"Test dataset saved to {test_output_path}")
 
 #region Create Pretraining dataframe
 
-#region OLD  Function to create a dataframe based on image and annotation data
-
 #region OLD Function to create a pretraining DataFrame
 def create_pretraining_dataframe(coco_recog):
     # Create a mapping from category_id to ABZ notation
     category_mapping = {category["id"]: category.get("abz", None) for category in coco_recog["categories"]}
 
-    # Initialize a list to store rows for the new DataFrame
+    # Initialize list to store rows for new dataframe
     rows = []
 
-    # Iterate through the images in coco_recog
+    # iterate hrough images in coco_recog
     for image in coco_recog["images"]:
         img_name = image["file_name"]
         height = image["height"]
         width = image["width"]
 
-        # Find all annotations for this image
+        # get annotations
         annotations = [ann for ann in coco_recog["annotations"] if ann["image_name"] == img_name]
 
-        # Extract annotation details
+        # details
         category_ids = [ann["category_id"] for ann in annotations]
         bboxes = [ann["bbox"] for ann in annotations]
         areas = [ann["area"] for ann in annotations]
         abz_notations = [category_mapping[cat_id] for cat_id in category_ids]
 
-        # Append the data as a row
+        # append data
         rows.append({
             "img_name": img_name,
             "height": height,
@@ -157,12 +154,9 @@ def create_pretraining_dataframe(coco_recog):
             "abz": abz_notations
         })
 
-    # Create a DataFrame from the rows
     return pd.DataFrame(rows)
 #endregion
 
-# Example usage
-# For coco_recog_train
 pd.set_option("display.max_columns", None)
 
 df_train = create_pretraining_dataframe(coco_recog_train)
@@ -190,23 +184,21 @@ print(train_raw.head(2))
 #region OLD Create vocabulary
 # Use categories as the vocabulary and inverse vocabulary
 def create_vocab_and_inverse(df):
-    # Create vocab and inverse vocab from categories
     vocab = {category["abz"]: category["id"] for category in df["categories"]}
     inv_vocab = {category["id"]: category["abz"] for category in df["categories"]}
 
-    # Add special tokens at the end
+    # special tokens
     max_id = max(vocab.values())
     vocab.update({"<BOS>": max_id + 1, "<EOS>": max_id + 2, "<UNK>": max_id + 3, "<PAD>": max_id + 4})
     inv_vocab.update({max_id + 1: "<BOS>", max_id + 2: "<EOS>", max_id + 3: "<UNK>", max_id + 4: "<PAD>"})
 
     return vocab, inv_vocab
 
-# Example usage
 vocab, inv_vocab = create_vocab_and_inverse(coco_recog_train)
 print(vocab)
 print()
 
-# Save vocab to a JSON file
+# Saving
 vocab_path = '/home/ubuntu/MasterThesis/code/yunus_data/vocab.json'
 inv_vocab_path = '/home/ubuntu/MasterThesis/code/yunus_data/inv_vocab.json'
 
@@ -222,27 +214,28 @@ print(f"Vocabulary and inverse vocabulary saved at:\n{vocab_path}\n{inv_vocab_pa
 #endregion
 
 #region NEW: Open Vocabulary and Inv Vocabulary
-# Load vocab.json
 with open('/home/ubuntu/MasterThesis/code/yunus_data/vocab.json', "r") as vocab_file:
     vocab = json.load(vocab_file)
-
-# Load inv_vocab.json
 with open('/home/ubuntu/MasterThesis/code/yunus_data/inv_vocab.json', "r") as inv_vocab_file:
     inv_vocab = json.load(inv_vocab_file)
 #endregion
 
 
-# Modify DataFrame tokenization with special tokens
+# modify tokenization - including unknown tokens
 def tokenize_with_special_tokens(df, column_name="abz"):
     df["tok_signs"] = df[column_name].apply(
         lambda x: ["<BOS>"] + [token if token in vocab else "<UNK>" for token in x] + ["<EOS>"]
     )
     return df
 
-# Apply the tokenization with special tokens
 df_train = tokenize_with_special_tokens(train_raw, column_name="abz")
 df_val = tokenize_with_special_tokens(val_raw, column_name="abz")
+
 #df_test = tokenize_with_special_tokens(df_test, column_name="abz")
+print(new_raw.columns)
+print(df_train.columns)
+df_new['img_name'] = df_new['_id'] + '.jpg'
+
 
 # Inspect the updated DataFrame
 print(df_train[["abz", "tok_signs"]].head(2))
@@ -285,11 +278,15 @@ def tokens_to_labels(token_ids, pad_token_id=123):
 df_train["labels"] = df_train["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
 df_val["labels"] = df_val["input_ids"].apply(lambda ids: tokens_to_labels(ids, pad_token_id=vocab["<PAD>"]))
 
+print(df_train.head())
 print(len(df_train))
 print(len(df_val))
 print(df_train.head(2))
 print(df_train.columns)
 print(df_train[['input_ids', 'attention_mask', 'labels']].head(2))
+print(df_train.columns)
+print(len(df_train))
+print(df_train_resized.columns)
 #endregion
 
 #region Saving training, validation and test dataset for finetuning
@@ -305,7 +302,6 @@ def save_to_json(df, folder_path, file_name):
 # Subfolder path
 data_folder = '/home/ubuntu/MasterThesis/code/yunus_data/'
 
-# Save each dataset to the subfolder
 save_to_json(df_train, data_folder, 'df_train_resized.json')
 save_to_json(df_val, data_folder, 'df_val_resized.json')
 #save_to_json(df_test, data_folder, 'df_test.json')
@@ -358,24 +354,23 @@ import math
 
 class PerplexityLoggingCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, **kwargs):
-        # Extract the metrics logged during evaluation
+        # extract metrics during eval
         metrics = kwargs.get("metrics", {})
         eval_loss = metrics.get("eval_loss")
 
         if eval_loss is not None:
             perplexity = math.exp(eval_loss)
-            # Log perplexity to wandb
+            # log
             wandb.log({"epoch": state.epoch, "perplexity": perplexity})
             print(f"Epoch {state.epoch}: Perplexity = {perplexity}")
 #endregion
 
 #region Early Stopping Callback
-'''from transformers import EarlyStoppingCallback
+from transformers import EarlyStoppingCallback
 
-# Add EarlyStoppingCallback with a tolerance of 5 epochs
 early_stopping_callback = EarlyStoppingCallback(
-    early_stopping_patience=5  # Number of epochs to wait for improvement
-)'''
+    early_stopping_patience=5  # tolerance
+)
 #endregion
 
 ######### LM Training: BertLMHead #########
@@ -464,53 +459,48 @@ torch.cuda.memory_summary(device=None, abbreviated=False)
 torch.cuda.empty_cache()
 torch.cuda.is_available()
 
-# Check if GPU is available and set the device accordingly
+#  setup gpu
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Initialize Weights and Biases for a new training run in the master_thesis project
 wandb.init(project="master_thesis", name="better_reordered_transliterations_try3_10batch")
 
-# Load the base pre-trained BERT model and its configuration
 config = BertConfig.from_pretrained('bert-base-uncased')
 config.is_decoder = True
 config.vocab_size = len(vocab)
 model = BertLMHeadModel.from_pretrained('bert-base-uncased', config=config, ignore_mismatched_sizes=True)
 model.resize_token_embeddings(len(vocab))
 
-# Create a folder to save models during this run
 output_dir = '/home/ubuntu/MasterThesis/code/yunus_data/pretraining_after_better_reorder/'
 
 # Define the training arguments
 training_args = TrainingArguments(
-    output_dir=output_dir,             # Output directory for saving models
-    num_train_epochs=15,               # Train for 30 epochs
-    per_device_train_batch_size=10,    # Training batch size
-    warmup_steps=400,                  # Warmup steps for the learning rate scheduler
-    weight_decay=0.001,                # Weight decay for regularization
-    logging_dir='./logs',              # Directory for logs
-    logging_steps=500,                 # Log every 500 steps to monitor training
-    save_strategy="epoch",             # Save the model at the end of each epoch
-    save_total_limit=1,                # Only keep the most recent model
-    report_to="wandb",                 # Log training progress to wandb
-    fp16=True                          # Use mixed precision for faster training
+    output_dir=output_dir,             
+    num_train_epochs=15,             
+    per_device_train_batch_size=10,    
+    warmup_steps=400,                  
+    weight_decay=0.001,                
+    logging_dir='./logs',            
+    logging_steps=500,                 
+    save_strategy="epoch",             
+    save_total_limit=1,               
+    report_to="wandb",           
+    fp16=True                         
 )
 
-# Initialize the Trainer using train and test datasets (without validation dataset)
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=train_dataset,       # Train on the train dataset
+    train_dataset=train_dataset,      
     callbacks=[
         WandbCallback(), 
         PerplexityLoggingCallback()]
 ) 
 
 
-# Train the model
 trainer.train()
 
-# Evaluate the model on the test dataset
+# evaluation
 test_result = trainer.evaluate(eval_dataset=val_dataset)
 print("Test Loss: ", test_result['eval_loss'])
 
@@ -518,7 +508,6 @@ import math
 test_perplexity = math.exp(test_result['eval_loss'])
 print("Test Perplexity: ", test_perplexity)
 
-# Save the trained model to output_dir
 trainer.save_model(output_dir)
 print(f"Model saved to {output_dir}")
 
@@ -530,33 +519,30 @@ wandb.finish()
 from transformers import BertLMHeadModel, Trainer, TrainingArguments
 import math
 
-# Load the trained model from the checkpoint
+# loading model
 model_path = "/home/ubuntu/MasterThesis/code/excluding_unsure_tokens/results_higherbatch/checkpoint-6500/"
 model = BertLMHeadModel.from_pretrained(model_path)
 
 # Re-create the test dataset with the updated TransliterationDataset class
 test_dataset = TransliterationDataset(df_val) 
 
-# Define evaluation arguments
+# evaluation arguments
 training_args = TrainingArguments(
     output_dir=model_path,
     per_device_eval_batch_size=24,
     logging_dir='./logs',
-    report_to="none"  # Disable logging to wandb or other services during evaluation
+    report_to="none" 
 )
 
-# Initialize the Trainer with only evaluation dataset
 trainer = Trainer(
     model=model,
     args=training_args,
     eval_dataset=test_dataset
 )
 
-# Run evaluation on the test dataset
 test_result = trainer.evaluate()
 print("Test Loss: ", test_result['eval_loss'])
 
-# Calculate perplexity from the evaluation loss
 test_perplexity = math.exp(test_result['eval_loss'])
 print("Test Perplexity: ", test_perplexity)
 

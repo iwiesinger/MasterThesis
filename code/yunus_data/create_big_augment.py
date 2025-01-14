@@ -1,4 +1,7 @@
-# This image does pretty much what preprocessing_image_data does. Just that it combines everything into one folder. I wanted to have a clean sheet for this.
+# This image does pretty much what preprocessing_image_data does. 
+# Just that it combines everything into one folder. I wanted to have a clean sheet for this.
+# It creates rotated data from yunus_resized in order to then randomly preprocess it with adaptive thresholding, histogram equalization,
+# erosion or just leaving it in its original
 
 ########## Preparation - Opening and Cutting ##########
 
@@ -125,20 +128,14 @@ def filter_and_append_rotated_data(df_big_aug, df_other):
     # Extract original image names without ".jpg"
     original_img_names = df_big_aug['img_name'].str.replace('.jpg', '', regex=False).unique()
     
-    # Prepare an explicit list of allowed filenames
+    # Prepare explicit list of allowed filenames
     allowed_filenames = set()
     for name in original_img_names:
         allowed_filenames.add(f"{name}_+5.jpg")
         allowed_filenames.add(f"{name}_-5.jpg")
-    
-    # Debug: Print allowed filenames
-    print(f"Allowed filenames: {allowed_filenames}")
 
     # Filter df_other for rows where img_name is in the allowed list
     filtered_df = df_other[df_other['img_name'].isin(allowed_filenames)]
-    
-    # Debug: Print filtered rows
-    print(f"Filtered rows: {filtered_df}")
 
     # Append filtered rows to df_big_aug
     updated_df = pd.concat([df_big_aug, filtered_df], ignore_index=True)
@@ -151,7 +148,7 @@ print(df_orig_rot['img_name'].head(30))
 print(len(df_orig_rot))
 df_train_with_rotation = df_orig_rot
 
-# Now let's copy all images with img_names that are in df_orig_rot into the yunus_bug_augment image folder
+# 
 target_folder = "/home/ubuntu/MasterThesis/yunus_big_augment/"
 df_rot_train_images = '/home/ubuntu/MasterThesis/yunus_aug_rotation/train'
 df_rot_val_images = '/home/ubuntu/MasterThesis/yunus_aug_rotation/validation'
@@ -160,7 +157,6 @@ for img_name in df_orig_rot['img_name']:
     source_path = os.path.join(df_rot_val_images, img_name)
     target_path = os.path.join(target_folder, img_name)
     
-    # Copy the file if it exists
     if os.path.exists(source_path):
         shutil.copy(source_path, target_path)
     else:
@@ -183,8 +179,6 @@ df_train_with_rotation.to_json('/home/ubuntu/MasterThesis/code/yunus_data/df_tra
 #endregion
 
 
-# Let's do random augmentation
-
 def random_image_modification(input_folder, output_folder):
     """
     Randomly modifies images from the input folder and saves the results in the output folder.
@@ -206,7 +200,7 @@ def random_image_modification(input_folder, output_folder):
 
         image = cv2.imread(filepath)
 
-        # Skip if the image is None (failed to load)
+        # Skip if failed to load
         if image is None or image.size == 0:
             print(f"Warning: Failed to load image or image is empty: {filepath}")
             continue
@@ -237,7 +231,7 @@ def random_image_modification(input_folder, output_folder):
                 kernel = np.ones((3, 3), np.uint8)
                 processed_image = cv2.erode(gray_image, kernel, iterations=1)
 
-            # Save the processed image with the same name in the output folder
+            # Saving 
             output_path = os.path.join(output_folder, filename)
             cv2.imwrite(output_path, processed_image)
             print(f"Processed ({operation}) and saved: {output_path}")
@@ -245,7 +239,7 @@ def random_image_modification(input_folder, output_folder):
         except Exception as e:
             print(f"Error processing {filepath}: {e}")
 
-# Example usage
+
 input_folder = "/home/ubuntu/MasterThesis/yunus_big_augment"
 output_folder = "/home/ubuntu/MasterThesis/yunus_random_augment"
 random_image_modification(input_folder, output_folder)
@@ -267,13 +261,10 @@ def check_image_text_alignment(root_dir, data_path, img_column='img_name'):
     Returns:
         None
     """
-    # Load the dataset
     data = pd.read_json(data_path)
-
-    # Get the list of images from the folder
     image_files = set(os.listdir(root_dir))
 
-    # Get the list of image names from the dataset
+    # list of names
     dataset_images = set(data[img_column])
 
     # Check for mismatches
@@ -308,6 +299,6 @@ check_image_text_alignment(root_dir_train, train_data_path)
 check_image_text_alignment(root_dir_test, test_data_path)
 check_image_text_alignment(root_dir_val, val_data_path)
 
-# Alles passt zusammen.
+# Alles passt zusammen. Juhu!
 #endregion
 

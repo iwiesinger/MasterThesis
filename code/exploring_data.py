@@ -1,3 +1,8 @@
+# Here, the datasets received from yunus are explored. 
+# Furthermore, the images corresponding to big_dataset are gotten from the database
+# Finally, the new data is created, i.e. the big_dataset is filtered and some rows are kept
+
+
 ######### Overview & Preprocessing #########
 
 #region Read and get overview over raw data
@@ -21,15 +26,12 @@ if os.path.exists(file_path) and os.access(file_path, os.R_OK):
 else:
     print("The file does not exist or is not readable.")
 
-# Length of the list
 list_length = len(raw_data)
 print(f"The raw data has {list_length} items.")
 
-# Types of elements
 element_types = set(type(item) for item in raw_data)
 print(f"The list contains items of types: {element_types}")
 
-# convert into dataframe
 import pandas as pd
 df_raw = pd.DataFrame(raw_data)
 print(df_raw.head())
@@ -177,11 +179,9 @@ unique_cat_coco = {}
 
 # check if value is a dictionary
 if isinstance(categories_coco, list) and len(categories_coco) > 0 and isinstance(categories_coco[0], dict):
-    # Initialize sets for each key in the dictionaries
     for key in categories_coco[0].keys():
         unique_cat_coco[key] = set()
 
-    # Iterate over each dictionary in the list
     for cat in categories_coco:
         # Collect unique values for each key
         for key, value in cat.items():
@@ -191,7 +191,6 @@ if isinstance(categories_coco, list) and len(categories_coco) > 0 and isinstance
                 value = tuple(value) if isinstance(value, list) else str(value)
             unique_cat_coco[key].add(value)
 
-# Print the unique values and their counts 
 print("Unique values for 'categories':")
 for key, values in unique_cat_coco.items():
     print(f"  {key}: {len(values)} unique values")
@@ -239,7 +238,6 @@ unique_filenames = set()
 
 # Iterate over the list to collect unique values
 for entry in annotations_new:
-    # Add values for each key to their respective sets
     if "ocredSigns" in entry:
         unique_ocredSigns.add(entry["ocredSigns"])
     if "filename" in entry:
@@ -267,10 +265,8 @@ from gridfs import GridFSBucket
 mongo_uri = "mongodb://wiesinger:xtz4bbBHnyDKeYT4uqEW@badwcai-ebl01.srv.mwn.de:27017,badwcai-ebl02.srv.mwn.de:27018,badwcai-ebl03.srv.mwn.de:27019/ebl?replicaSet=rs-ebl&authSource=ebl&authMechanism=SCRAM-SHA-1&tls=true&tlsAllowInvalidCertificates=true"
 
 try:
-    # Create a MongoDB client
     client = MongoClient(mongo_uri)
 
-    # The ping command is used to check if the connection to MongoDB is successful
     client.admin.command('ping')
     print("Connection to MongoDB successful!")
 
@@ -337,9 +333,7 @@ jpg_files = [file for file in os.listdir(folder_path) if file.endswith('.jpg')]
 
 # Iterate through each image and print its size (width and height in pixels)
 for file_name in jpg_files:
-    # Open the image file
     with Image.open(os.path.join(folder_path, file_name)) as img:
-        # Get the size (width, height) of the image
         width, height = img.size
         print(f'Image: {file_name} | Width: {width} px | Height: {height} px')
 # Images are not normalized
@@ -459,6 +453,7 @@ for file_name in os.listdir(main_folder):
 final_count = len([f for f in os.listdir(main_folder) if os.path.isfile(os.path.join(main_folder, f))])
 print(f"Final number of images in the main folder: {final_count}")
 
-
-
-
+df_new_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_new.json'
+with open(df_new_path, 'r') as f:
+    df_new = pd.DataFrame(json.load(f))
+print(len(df_new))

@@ -303,7 +303,6 @@ def process_and_save_images(folder_path, bounding_boxes, output_folder):
         bounding_boxes (dict): Existing bounding boxes for images, where keys are image file names and values are lists of bounding boxes.
         output_folder (str): Folder to save images with bounding boxes drawn.
     """
-    os.makedirs(output_folder, exist_ok=True)  # Ensure the output folder exists
 
     for file_name in os.listdir(folder_path):
         file_path = os.path.join(folder_path, file_name)
@@ -329,7 +328,7 @@ def process_and_save_images(folder_path, bounding_boxes, output_folder):
         cv2.imwrite(output_path, display_image)
         print(f"Saved: {output_path}")
 
-        # Optionally: Display it, too
+        # also looking at them
         plt.figure(figsize=(10, 10))
         plt.title(f"Bounding Boxes for {file_name}")
         plt.imshow(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
@@ -374,7 +373,7 @@ def process_and_save_images_with_abz(folder_path, bounding_boxes, abz_data, outp
         cv2.imwrite(output_path, display_image)
         print(f"Saved: {output_path}")
 
-        # Optionally display 
+        #  display
         plt.figure(figsize=(10, 10))
         plt.title(f"Bounding Boxes for {file_name}")
         plt.imshow(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
@@ -408,7 +407,7 @@ def save_images_with_abz(folder_path, bounding_boxes, abz_data, output_folder):
 
         display_image = image.copy()
 
-        # Draw bounding boxes and abz annotations
+        # bbox and abz
         if bounding_boxes and file_name in bounding_boxes:
             for idx, (bbox, abz) in enumerate(zip(bounding_boxes[file_name], abz_data.get(file_name, [])), start=1):
                 x, y, w, h = bbox
@@ -416,7 +415,7 @@ def save_images_with_abz(folder_path, bounding_boxes, abz_data, output_folder):
                 # Add abz annotation to the top-left corner of the bounding box
                 cv2.putText(display_image, str(abz), (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.53, (255, 0, 0), 2)
 
-        # Save the resulting image to the output folder
+        # saving
         output_path = os.path.join(output_folder, file_name)
         cv2.imwrite(output_path, display_image)
         print(f"Saved: {output_path}")
@@ -591,7 +590,7 @@ def resize_image_and_boxes(image, bboxes, target_bbox_height, max_image_size=(10
     resized_image = cv2.resize(image, (new_w, new_h))
     scaled_bboxes = [[int(x * scaling_factor), int(y * scaling_factor), int(w * scaling_factor), int(h * scaling_factor)] for x, y, w, h in bboxes]
 
-    # Ensure image does not exceed max_image_size
+    # Ensure image does not exceed max_image_size - if it does, resize
     max_h, max_w = max_image_size
     if new_h > max_h or new_w > max_w:
         scaling_factor = min(max_w / new_w, max_h / new_h)
@@ -643,18 +642,18 @@ for img_name, bboxes in bboxes_per_img.items():
         print(f"Failed to load image: {input_path}")
         continue
 
-    # Resize the image and adjust bounding boxes
+    # resize img and adjust bboxes
     resized_image, adjusted_bboxes = resize_image_and_boxes(image, bboxes, target_bbox_height, final_size=(1024,1024))
     if resized_image is None:
         continue
 
-    # Save resized image
+    # save resized image
     cv2.imwrite(output_path, resized_image)
     print(f"Processed and saved: {output_path}")
 
-    # Store adjusted bounding boxes and image dimensions
-    adjusted_bboxes_dict[img_name] = adjusted_bboxes # maps image names to bounding boxes
-    adjusted_image_sizes_dict[img_name] = resized_image.shape[:2]  # maps names to new dimensions: height, width - should be 1024x1024 for each image
+    # adjusted bboxes and img dimensions
+    adjusted_bboxes_dict[img_name] = adjusted_bboxes # image names to bounding boxes
+    adjusted_image_sizes_dict[img_name] = resized_image.shape[:2]  # names to new dimensions
 
 print("Adjusted bounding boxes dictionary:", list(adjusted_bboxes_dict.items())[:2])
 print("Image sizes dictionary:", list(adjusted_image_sizes_dict.items())[:2])
@@ -738,10 +737,10 @@ def augment_bboxes_with_clusters(bboxes_dict, clustering_stats):
     # mapping from image names to clusters: dict
     cluster_mapping = clustering_stats.set_index("image")["cluster"].to_dict()
 
-    # Augment the bounding boxes dictionary with cluster info
+    # include cluster info
     augmented_dict = {}
     for img_name, bboxes in bboxes_dict.items():
-        cluster = cluster_mapping.get(img_name, -1)  # Default cluster to -1 if not found
+        cluster = cluster_mapping.get(img_name, -1)  # -1 if not found
         augmented_dict[img_name] = {"bboxes": bboxes, "cluster": cluster}
 
     return augmented_dict
@@ -777,14 +776,14 @@ def sort_bounding_boxes_with_clusters(bounding_boxes_with_clusters, abz_data, cl
         bboxes = data["bboxes"]
         cluster = data["cluster"]
 
-        # Fetch the row threshold for the cluster
-        row_threshold = cluster_thresholds.get(cluster, 20)  # Default threshold if cluster not in map
+        # Fetch row for threshold cluster
+        row_threshold = cluster_thresholds.get(cluster, 20)  # Default trheshold if cluster not in map
 
-        # Pair bounding boxes with their corresponding abz values
+        # pair bboxes and abz
         paired = list(zip(bboxes, abz_data.get(img_name, [])))
 
         # Sort by top (y-coordinate)
-        paired = sorted(paired, key=lambda item: item[0][1])  # Sort by bbox y-coordinate
+        paired = sorted(paired, key=lambda item: item[0][1]) 
 
         # Group into rows
         rows = []
@@ -843,7 +842,6 @@ def create_new_dataset_with_sorted_abz(df, sorted_bboxes_dict, sorted_abz_dict, 
     for _, row in df.iterrows():
         img_name = row["img_name"]
 
-        # Fetch sorted bboxes, dimensions and abz value for img
         bboxes = sorted_bboxes_dict.get(img_name, [])
         height, width = image_sizes_dict.get(img_name, (None, None))
         abz_values = sorted_abz_dict.get(img_name, [])
@@ -867,7 +865,6 @@ def create_new_dataset_with_sorted_abz(df, sorted_bboxes_dict, sorted_abz_dict, 
         }
         new_rows.append(new_row)
 
-    # Create a new DataFrame with the updated data
     return pd.DataFrame(new_rows)
 
 # Opening the "old" datasets
@@ -912,10 +909,6 @@ def organize_images_by_dataset(resized_folder, train_dataset, val_dataset, outpu
     """
     train_output_folder = os.path.join(output_base_folder, "train")
     val_output_folder = os.path.join(output_base_folder, "val")
-
-    # Create output folders if they don't exist
-    os.makedirs(train_output_folder, exist_ok=True)
-    os.makedirs(val_output_folder, exist_ok=True)
 
     # copy images based on dataset
     def copy_images(dataset, destination_folder):
@@ -1014,7 +1007,6 @@ abz_to_category_id = {abz: idx for idx, abz in enumerate(categories)}
 df_train_resized["category_id"] = df_train_resized["abz"].apply(lambda abz_list: [abz_to_category_id[abz] for abz in abz_list])
 df_val_resized["category_id"] = df_val_resized["abz"].apply(lambda abz_list: [abz_to_category_id[abz] for abz in abz_list])
 
-# Save changes
 df_train_resized.to_json("/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json", orient="records", indent=2)
 df_val_resized.to_json("/home/ubuntu/MasterThesis/code/yunus_data/df_val_resized.json", orient="records", indent=2)
 #endregion
@@ -1097,7 +1089,7 @@ def process_images_with_methods(test_folder, output_folder):
         if "high" in methods[method]:
             os.makedirs(os.path.join(output_folder, f"{method}_high"), exist_ok=True)
 
-    # Process each image
+    # process each image
     for filename in os.listdir(test_folder):
         filepath = os.path.join(test_folder, filename)
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
@@ -1157,7 +1149,6 @@ def process_images_with_thresholding(test_folder, output_folder):
     for filename in os.listdir(test_folder):
         filepath = os.path.join(test_folder, filename)
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-            # Load the image in grayscale
             image = load_image(filepath, as_gray=True)
 
             # Simple thresholding
@@ -1209,30 +1200,25 @@ def apply_adaptive_mean_thresholding(input_folder, output_folder):
         filepath = os.path.join(input_folder, filename)
 
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-            # Load the image in grayscale
             image = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
 
             if image is None:
                 print(f"Failed to load image: {filepath}")
                 continue
 
-            # Apply adaptive mean thresholding
             adaptive_mean_thresh = cv2.adaptiveThreshold(
                 image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 2
             )
 
-            # Save the processed image
             output_path = os.path.join(output_folder, filename)
             cv2.imwrite(output_path, adaptive_mean_thresh)
             print(f"Processed and saved: {output_path}")
 
-# Paths
 input_train = "/Users/irina/PythonProjects/MasterThesis/yunus_resized/train/"
 output_train = "/Users/irina/PythonProjects/MasterThesis/yunus_processed/train/"
 input_val = "/Users/irina/PythonProjects/MasterThesis/yunus_resized/val/"
 output_val = "/Users/irina/PythonProjects/MasterThesis/yunus_processed/val/"
 
-# Run the function
 apply_adaptive_mean_thresholding(input_train, output_train)
 apply_adaptive_mean_thresholding(input_val, output_val)
 
@@ -1263,7 +1249,7 @@ def resize_and_rotate_image(image, rotation_angle, target_bbox_height, max_image
     Returns:
         np.array: Final resized, rotated, and padded image.
     """
-    # Step 1: Rotate the image
+    # rotation matrix
     original_h, original_w = image.shape[:2]
     center = (original_w // 2, original_h // 2)
     rotation_matrix = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
@@ -1278,22 +1264,22 @@ def resize_and_rotate_image(image, rotation_angle, target_bbox_height, max_image
     rotation_matrix[0, 2] += (new_w / 2) - center[0]
     rotation_matrix[1, 2] += (new_h / 2) - center[1]
 
-    # Rotate the image
+    # rotate
     rotated_image = cv2.warpAffine(image, rotation_matrix, (new_w, new_h))
 
-    # Step 2: Resize rotated image based on target bounding box height
-    scaling_factor = target_bbox_height / original_h  # Use original height as reference for scaling
+    # rsize rotated image based on target bounding box height
+    scaling_factor = target_bbox_height / original_h  
     resized_h, resized_w = int(new_h * scaling_factor), int(new_w * scaling_factor)
     resized_image = cv2.resize(rotated_image, (resized_w, resized_h))
 
-    # Step 3: Ensure image does not exceed max_image_size
+    # image < max_size
     max_h, max_w = max_image_size
     if resized_h > max_h or resized_w > max_w:
         scaling_factor = min(max_w / resized_w, max_h / resized_h)
         resized_h, resized_w = int(resized_h * scaling_factor), int(resized_w * scaling_factor)
         resized_image = cv2.resize(resized_image, (resized_w, resized_h))
 
-    # Step 4: Pad image to final_size
+    # pad
     final_h, final_w = final_size
     pad_top = max((final_h - resized_h) // 2, 0)
     pad_bottom = max(final_h - resized_h - pad_top, 0)
@@ -1304,14 +1290,12 @@ def resize_and_rotate_image(image, rotation_angle, target_bbox_height, max_image
 
     return padded_image
 
-# Paths and configurations
-input_folder = "/home/ubuntu/MasterThesis/cutted_images/train/"
-output_folder = "/home/ubuntu/MasterThesis/yunus_augmented_rotation"
-target_bbox_height = 40  # Target median bounding box height
-rotation_angles = [-5, 5]  # Rotations in degrees
+input_folder = "/home/ubuntu/MasterThesis/cutted_images/"
+output_folder = "/home/ubuntu/MasterThesis/yunus_rotated"
+target_bbox_height = 40 
+rotation_angles = [-5, 5] 
 os.makedirs(output_folder, exist_ok=True)
 
-# Process all images
 for img_name in os.listdir(input_folder):
     input_path = os.path.join(input_folder, img_name)
 
@@ -1323,12 +1307,10 @@ for img_name in os.listdir(input_folder):
         print(f"Failed to load image: {input_path}")
         continue
 
-    # Save the original resized and padded image
     resized_image = resize_and_rotate_image(image, 0, target_bbox_height) 
     cv2.imwrite(os.path.join(output_folder, img_name), resized_image)
     print(f"Processed and saved original: {img_name}")
 
-    # Save rotated versions
     for angle in rotation_angles:
         rotated_image = resize_and_rotate_image(image, angle, target_bbox_height)
         angle_str = f"{'+' if angle > 0 else ''}{angle:02d}"  # Format angle as +05 or -05
@@ -1378,15 +1360,11 @@ df_train_aug_rot = pd.concat(
 def save_to_json(df, folder_path, file_name):
     file_path = os.path.join(folder_path, file_name)
     print(file_path)
-    # Convert the DataFrame to a dictionary and save as JSON
     data = df.to_dict(orient='records')
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# Subfolder path
 data_folder = '/home/ubuntu/MasterThesis/code/yunus_data/'
-
-# Save each dataset to the subfolder
 save_to_json(df_train_aug_rot, data_folder, 'df_train_aug_rot.json')
 
 #endregion
@@ -1412,21 +1390,19 @@ def augment_images_with_rotation(input_folder, output_folder, df_train, rotation
         img_name = row['img_name']
         img_path = os.path.join(input_folder, img_name)
 
-        # Load the image
         image = cv2.imread(img_path)
         if image is None:
             print(f"Failed to load image: {img_name}")
             continue
 
         height, width = row['height'], row['width']
-        bboxes = row['bbox']  # Bounding boxes for the original image
+        bboxes = row['bbox']  
 
-        # Save the original image and its metadata
         original_path = os.path.join(output_folder, img_name)
         cv2.imwrite(original_path, image)
-        augmented_rows.append(row.to_dict())  # Add the original row unchanged
+        augmented_rows.append(row.to_dict())  # adding original unchanged
 
-        # Rotate the image for each angle
+        # rotate for each angle
         for angle in rotation_angles:
             # Rotate the image
             center = (width // 2, height // 2)
@@ -1452,36 +1428,31 @@ def augment_images_with_rotation(input_folder, output_folder, df_train, rotation
             # Recalculate areas
             rotated_areas = [w * h for _, _, w, h in rotated_bboxes]
 
-            # Reuse metadata and modify necessary columns
-            rotated_row = row.to_dict()  # Copy the original metadata
+            # reuse metadata and modify necessary columns
+            rotated_row = row.to_dict()  
             rotated_row['img_name'] = os.path.splitext(img_name)[0] + f"_{angle:+0d}.jpg"
             rotated_row['bbox'] = rotated_bboxes
             rotated_row['area'] = rotated_areas
 
-            # Save rotated image
             rotated_img_path = os.path.join(output_folder, rotated_row['img_name'])
             cv2.imwrite(rotated_img_path, rotated_image)
 
-            # Add to the augmented dataset
             augmented_rows.append(rotated_row)
 
-    # Create the augmented DataFrame
     augmented_df = pd.DataFrame(augmented_rows)
     return augmented_df
 
 # Paths
-input_folder = "/home/ubuntu/MasterThesis/yunus_resized/train"
-output_folder = "/home/ubuntu/MasterThesis/yunus_aug_rotation"
+input_folder = "/home/ubuntu/MasterThesis/yunus_resized/train_old/"
+output_folder = "/home/ubuntu/MasterThesis/yunus_rotated"
+train_resized_data_path = '/home/ubuntu/MasterThesis/code/yunus_data/df_train_resized.json'
 
 with open(train_resized_data_path, 'r') as f:
     df_train_resized = pd.DataFrame(json.load(f))
 print(df_train_resized.columns)
 
 
-# Perform augmentation
 df_train_aug_rotation = augment_images_with_rotation(input_folder, output_folder, df_train_resized)
-
-# Save the augmented dataset
 df_train_aug_rotation.to_json("/home/ubuntu/MasterThesis/code/yunus_data/df_train_aug_newrotation.json", orient="records", indent=4)
 
 # Check if rotation with bboxes worked!! 
@@ -1511,7 +1482,6 @@ def train_val_split(df):
 
     return df_train, df_val
 
-# Apply the function
 df_train, df_val= train_val_split(df_aug_shuffled)
 
 df_train.to_json('/home/ubuntu/MasterThesis/code/yunus_data/df_train_aug.json', orient="records", indent=4)
@@ -1532,7 +1502,7 @@ def create_image_datasets(image_folder, train_df, val_df, output_folder):
     Returns:
         Nothing
     """
-    # Create output directories for train and validation images
+    #  output directories for train and validation images
     train_output_folder = os.path.join(output_folder, "train")
     val_output_folder = os.path.join(output_folder, "validation")
     os.makedirs(train_output_folder, exist_ok=True)
@@ -1554,8 +1524,8 @@ def create_image_datasets(image_folder, train_df, val_df, output_folder):
     print("Finished!")
 
 
-image_folder = "/home/ubuntu/MasterThesis/yunus_aug_rotation"  # Folder containing all images
-output_folder = "/home/ubuntu/MasterThesis/yunus_aug_rotation"     # Folder to store train/validation sub-folders
+image_folder = "/home/ubuntu/MasterThesis/yunus_aug_rotation"  
+output_folder = "/home/ubuntu/MasterThesis/yunus_aug_rotation"    
 
 create_image_datasets(image_folder, df_train, df_val, output_folder)
 
@@ -1577,21 +1547,17 @@ def apply_adaptive_gaussian_thresholding(input_folder, output_folder):
         filepath = os.path.join(input_folder, filename)
 
         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-            # Load the image in grayscale
             image = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
 
-            # Skip if the image is None (failed to load)
             if image is None or image.size == 0:
                 print(f"Warning: Failed to load image or image is empty: {filepath}")
                 continue
 
             try:
-                # Apply adaptive Gaussian thresholding
                 adaptive_gaussian_thresh = cv2.adaptiveThreshold(
                     image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
                 )
 
-                # Save the processed image
                 output_path = os.path.join(output_folder, filename)
                 cv2.imwrite(output_path, adaptive_gaussian_thresh)
                 print(f"Processed and saved: {output_path}")
@@ -1630,7 +1596,7 @@ def apply_erosion(input_folder, output_folder, kernel_size=3, iterations=1):
     """
     os.makedirs(output_folder, exist_ok=True)
 
-    # Define the erosion kernel
+    # erosion kernel
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
 
     for filename in os.listdir(input_folder):
@@ -1638,16 +1604,14 @@ def apply_erosion(input_folder, output_folder, kernel_size=3, iterations=1):
 
         image = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
 
-        # Skip if the image is None (failed to load)
+        # skip if img has error
         if image is None or image.size == 0:
             print(f"Warning: Failed to load image or image is empty: {filepath}")
             continue
 
-        try:
-            # Apply erosion
+        try: # erosion
             eroded_image = cv2.erode(image, kernel, iterations=iterations)
 
-            # Save the processed image
             output_path = os.path.join(output_folder, filename)
             cv2.imwrite(output_path, eroded_image)
             print(f"Processed and saved: {output_path}")
@@ -1669,7 +1633,7 @@ def apply_dilation(input_folder, output_folder, kernel_size=3, iterations=1):
     """
     os.makedirs(output_folder, exist_ok=True)
 
-    # Define the dilation kernel
+    # dilation kernel
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
 
     for filename in os.listdir(input_folder):
@@ -1678,11 +1642,9 @@ def apply_dilation(input_folder, output_folder, kernel_size=3, iterations=1):
 
         image = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
 
-        try:
-            # Apply dilation
+        try: # dilation
             dilated_image = cv2.dilate(image, kernel, iterations=iterations)
 
-            # Save the processed image
             output_path = os.path.join(output_folder, filename)
             cv2.imwrite(output_path, dilated_image)
             print(f"Processed and saved: {output_path}")
@@ -1698,7 +1660,6 @@ output_val = "/home/ubuntu/MasterThesis/yunus_aug_rotation_erosion/val"
 input_test = '/home/ubuntu/MasterThesis/yunus_resized/val'
 output_test = '/home/ubuntu/MasterThesis/yunus_resized/val/erosion'
 
-# Run the function
 apply_erosion(input_train, output_train, kernel_size=3, iterations=1)
 apply_erosion(input_val, output_val, kernel_size=3, iterations = 1)
 apply_dilation(input_train, output_train, kernel_size=3, iterations=1)
@@ -1723,22 +1684,21 @@ def kmeans_group_images_by_height(bounding_boxes, num_clusters=5):
     Returns:
         pd.DataFrame: A DataFrame with image names, median heights, and their assigned cluster.
     """
-    # Step 1: Compute median height per image
+    # median height per image
     image_heights = []
     for img_name, bboxes in bounding_boxes.items():
-        heights = [bbox[3] for bbox in bboxes]  # Extract heights
-        median_height = np.median(heights) if heights else 0  # Handle empty bounding boxes
+        heights = [bbox[3] for bbox in bboxes]  
+        median_height = np.median(heights) if heights else 0  
         image_heights.append({"image": img_name, "median_height": median_height})
 
-    # Convert to DataFrame
     df = pd.DataFrame(image_heights)
 
-    # Step 2: Prepare data for clustering
+    # prepare for clustering
     X = df["median_height"].values.reshape(-1, 1)  # Reshape to 2D array for K-Means
 
-    # Step 3: Apply K-Means clustering
-    kmeans = KMeans(n_clusters=num_clusters, random_state=42)  # Fixed random state for reproducibility
-    df["cluster"] = kmeans.fit_predict(X)  # Assign clusters
+    # apply clustering
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)  
+    df["cluster"] = kmeans.fit_predict(X)  
 
     return df, kmeans
 
